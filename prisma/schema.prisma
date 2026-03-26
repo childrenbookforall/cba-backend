@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  member
+}
+
+enum PostType {
+  text
+  link
+  photo
+}
+
+enum ReactionType {
+  with_you
+  helped_me
+  hug
+}
+
+enum NotificationType {
+  post_comment
+  comment_reply
+}
+
+enum FlagContentType {
+  post
+  comment
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  bio          String?
+  avatarUrl    String?
+  role         Role     @default(member)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  inviteTokensCreated InviteToken[]    @relation("CreatedBy")
+  groupMemberships    GroupMember[]
+  posts               Post[]
+  comments            Comment[]
+  reactions           Reaction[]
+  notificationsReceived Notification[] @relation("Recipient")
+  notificationsTriggered Notification[] @relation("TriggeredBy")
+  flagsSubmitted      Flag[]           @relation("FlaggedBy")
+  flagsReviewed       Flag[]           @relation("ReviewedBy")
+  pushSubscriptions   PushSubscription[]
+  refreshTokens       RefreshToken[]
+}
+
+model InviteToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  email     String
+  createdBy User      @relation("CreatedBy", fields: [createdById], references: [id])
+  createdById String
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  email     String
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  members GroupMember[]
+  posts   Post[]
+}
+
+model GroupMember {
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId   String
+  joinedAt  DateTime @default(now())
+
+  @@id([userId, groupId])
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId   String
+  type      PostType
+  title     String
+  content   String?
+  linkUrl   String?
+  mediaUrl  String?
+  isFlagged Boolean  @default(false)
+  isPinned  Boolean  @default(false)
+  pinnedAt  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments      Comment[]
+  reactions     Reaction[]
+  notifications Notification[]
+  flags         Flag[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId  String?
+  replies   Comment[] @relation("CommentReplies")
+  content   String
+  isFlagged Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+  flags         Flag[]
+}
+
+model Reaction {
+  id        String       @id @default(uuid())
+  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  @@unique([postId, userId])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipient   User             @relation("Recipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipientId String
+  triggeredBy User?            @relation("TriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+  triggeredById String?
+  type        NotificationType
+  post        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String
+  comment     Comment          @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId   String
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
+model Flag {
+  id          String          @id @default(uuid())
+  flaggedBy   User?           @relation("FlaggedBy", fields: [flaggedById], references: [id], onDelete: SetNull)
+  flaggedById String?
+  contentType FlagContentType
+  post        Post?           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String?
+  comment     Comment?        @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId   String?
+  reason      String?
+  reviewedBy  User?           @relation("ReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedById String?
+  reviewedAt  DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@unique([flaggedById, postId])
+  @@unique([flaggedById, commentId])
+}
