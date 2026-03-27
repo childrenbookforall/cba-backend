@@ -15,11 +15,7 @@ const authLimiter = rateLimit({
 
 const passwordValidation = [
   body('password')
-    .isLength({ min: 10 }).withMessage('Password must be at least 10 characters')
-    .matches(/[A-Z]/).withMessage('Password must contain at least one uppercase letter')
-    .matches(/[a-z]/).withMessage('Password must contain at least one lowercase letter')
-    .matches(/[0-9]/).withMessage('Password must contain at least one number')
-    .matches(/[^A-Za-z0-9]/).withMessage('Password must contain at least one special character'),
+    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
 ];
 
 router.get('/invite/:token', authLimiter, getInvite);

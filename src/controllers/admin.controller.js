@@ -3,6 +3,7 @@ const prisma = require('../prisma/client');
 const { sendInviteEmail } = require('../services/email.service');
 const { deleteMedia } = require('../services/upload.service');
 const { frontendUrl } = require('../config/env');
+const { sendPush } = require('../services/push.service');
 
 // ── Users ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ async function createUser(req, res, next) {
 
     const user = await prisma.user.create({
       data: { firstName, lastName, email, passwordHash: 'INVITE_PENDING' },
-      select: { id: true, firstName: true, lastName: true, email: true, role: true, createdAt: true },
+      select: { id: true, firstName: true, lastName: true, email: true, role: true, isActive: true, createdAt: true },
     });
 
     res.status(201).json(user);
@@ -52,7 +53,7 @@ async function sendInvite(req, res, next) {
       return res.status(500).json({ error: 'Invite token created but email could not be sent. Please try resending.' });
     }
 
-    res.status(201).json({ message: 'Invite sent' });
+    res.status(201).json({ message: 'Invite sent', inviteUrl });
   } catch (err) {
     next(err);
   }
@@ -134,6 +135,26 @@ async function deleteUser(req, res, next) {
     await prisma.user.delete({ where: { id: req.params.userId } });
 
     res.json({ message: 'User deleted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteGroup(req, res, next) {
+  try {
+    const group = await prisma.group.findUnique({ where: { id: req.params.groupId } });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const photoPosts = await prisma.post.findMany({
+      where: { groupId: req.params.groupId, type: 'photo', mediaUrl: { not: null } },
+      select: { mediaUrl: true },
+    });
+
+    await Promise.allSettled(photoPosts.map((p) => deleteMedia(p.mediaUrl)));
+
+    await prisma.group.delete({ where: { id: req.params.groupId } });
+
+    res.json({ message: 'Group deleted' });
   } catch (err) {
     next(err);
   }
@@ -379,9 +400,61 @@ async function reviewFlag(req, res, next) {
   }
 }
 
+// ── Push broadcast ────────────────────────────────────────────────────────────
+
+async function pushBroadcast(req, res, next) {
+  try {
+    const { title, body, url, image, target, groupIds, emails } = req.body;
+
+    let subscriptions;
+
+    if (target === 'all') {
+      subscriptions = await prisma.pushSubscription.findMany();
+    } else if (target === 'groups') {
+      subscriptions = await prisma.pushSubscription.findMany({
+        where: {
+          user: {
+            groupMemberships: { some: { groupId: { in: groupIds } } },
+          },
+        },
+      });
+    } else if (target === 'emails') {
+      subscriptions = await prisma.pushSubscription.findMany({
+        where: { user: { email: { in: emails } } },
+      });
+    } else {
+      return res.status(400).json({ error: 'Invalid target' });
+    }
+
+    const payload = { title, body, ...(url && { url }), ...(image && { image }) };
+    const expired = [];
+    let sent = 0;
+
+    await Promise.all(
+      subscriptions.map(async (sub) => {
+        const ok = await sendPush(sub, payload);
+        if (ok) {
+          sent++;
+        } else {
+          expired.push(sub.id);
+        }
+      })
+    );
+
+    if (expired.length > 0) {
+      await prisma.pushSubscription.deleteMany({ where: { id: { in: expired } } });
+    }
+
+    res.json({ sent, failed: expired.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
-  listGroups, listGroupMembers, createGroup, addGroupMember, removeGroupMember,
+  listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
   togglePinPost,
   listFlags, reviewFlag,
+  pushBroadcast,
 };

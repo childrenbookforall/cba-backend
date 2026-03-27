@@ -39,7 +39,7 @@ model User {
   email        String   @unique
   passwordHash String
   firstName    String
-  lastName     String
+  lastName     String?
   bio          String?
   avatarUrl    String?
   role         Role     @default(member)
