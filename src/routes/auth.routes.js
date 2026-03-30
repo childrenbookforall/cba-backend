@@ -18,8 +18,14 @@ const passwordValidation = [
     .isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
 ];
 
+const inviteValidation = [
+  ...passwordValidation,
+  body('firstName').trim().notEmpty().withMessage('First name is required'),
+  body('lastName').trim().optional({ checkFalsy: true }).isString(),
+];
+
 router.get('/invite/:token', authLimiter, getInvite);
-router.post('/invite/:token', authLimiter, passwordValidation, validateMiddleware, acceptInvite);
+router.post('/invite/:token', authLimiter, inviteValidation, validateMiddleware, acceptInvite);
 
 router.post('/login', authLimiter, [
   body('email').isEmail().withMessage('Valid email is required'),

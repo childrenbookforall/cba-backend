@@ -88,9 +88,14 @@ async function acceptInvite(req, res, next) {
       return res.status(400).json({ error: 'Invite has already been used' });
     }
 
+    const nameUpdate = {
+      firstName: req.body.firstName,
+      ...(req.body.lastName !== undefined && { lastName: req.body.lastName }),
+    };
+
     const user = await prisma.user.update({
       where: { email: invite.email },
-      data: { passwordHash },
+      data: { passwordHash, ...nameUpdate },
     });
 
     const token = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, {
