@@ -14,7 +14,7 @@ const mediaUpload = multer({
     if (ALLOWED_MEDIA_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPEG, PNG and WebP images are allowed'));
+      cb(Object.assign(new Error('Only JPEG, PNG and WebP images are allowed'), { status: 400 }));
     }
   },
 });

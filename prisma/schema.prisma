@@ -27,6 +27,7 @@ enum ReactionType {
 enum NotificationType {
   post_comment
   comment_reply
+  thread_comment
 }
 
 enum FlagContentType {

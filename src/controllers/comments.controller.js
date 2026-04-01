@@ -97,32 +97,50 @@ async function createComment(req, res, next) {
 }
 
 async function createNotification({ comment, post, actorId, parentComment }) {
-  let recipientId;
-  let type;
+  const notified = new Set([actorId]); // actor never receives their own notifications
+  const toCreate = [];
 
-  if (parentComment) {
-    // Reply to a comment — notify the parent comment's author
-    if (!parentComment.userId) return;
-    recipientId = parentComment.userId;
-    type = 'comment_reply';
-  } else {
-    // New comment on a post — notify the post author
-    if (!post.userId) return;
-    recipientId = post.userId;
-    type = 'post_comment';
+  // 1. Direct reply — notify the parent comment's author
+  if (parentComment?.userId && !notified.has(parentComment.userId)) {
+    notified.add(parentComment.userId);
+    toCreate.push({ recipientId: parentComment.userId, type: 'comment_reply' });
   }
 
-  // Don't notify yourself
-  if (recipientId === actorId) return;
+  // 2. Always notify the post author about any new comment or reply
+  if (post.userId && !notified.has(post.userId)) {
+    notified.add(post.userId);
+    toCreate.push({ recipientId: post.userId, type: 'post_comment' });
+  }
 
-  await prisma.notification.create({
-    data: {
-      recipientId,
+  // 3. Notify thread participants:
+  //    - For a reply: others who have replied to the same parent comment
+  //    - For a top-level comment: others who have commented at the top level on this post
+  const previousCommenters = await prisma.comment.findMany({
+    where: {
+      postId: post.id,
+      parentId: parentComment ? parentComment.id : null,
+      userId: { not: null },
+    },
+    select: { userId: true },
+    distinct: ['userId'],
+  });
+
+  for (const { userId } of previousCommenters) {
+    if (!notified.has(userId)) {
+      notified.add(userId);
+      toCreate.push({ recipientId: userId, type: 'thread_comment' });
+    }
+  }
+
+  if (toCreate.length === 0) return;
+
+  await prisma.notification.createMany({
+    data: toCreate.map((n) => ({
+      ...n,
       triggeredById: actorId,
-      type,
       postId: post.id,
       commentId: comment.id,
-    },
+    })),
   });
 }
 
