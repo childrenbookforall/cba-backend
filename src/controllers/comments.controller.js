@@ -87,10 +87,12 @@ async function createComment(req, res, next) {
       },
     });
 
-    // Pass the already-fetched parentComment to avoid a redundant DB query
-    await createNotification({ comment, post, actorId: req.user.userId, parentComment });
-
     res.status(201).json(comment);
+
+    // Fire notifications as a non-critical side effect — never fail the request over this
+    createNotification({ comment, post, actorId: req.user.userId, parentComment }).catch((err) => {
+      console.error('Failed to create comment notification:', err);
+    });
   } catch (err) {
     next(err);
   }

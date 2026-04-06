@@ -1,6 +1,7 @@
 const { Prisma } = require('@prisma/client');
 const prisma = require('../prisma/client');
 const { uploadMedia, deleteMedia } = require('../services/upload.service');
+const { fetchLinkPreview } = require('../services/linkPreview.service');
 
 // Internal helper — returns group IDs the given user belongs to
 async function getUserGroupIds(userId) {
@@ -172,6 +173,11 @@ async function createPost(req, res, next) {
       mediaUrl = mediaUrls[0];
     }
 
+    let linkPreview = {};
+    if (type === 'link' && linkUrl) {
+      linkPreview = (await fetchLinkPreview(linkUrl)) ?? {};
+    }
+
     const post = await prisma.post.create({
       data: {
         userId: req.user.userId,
@@ -180,17 +186,14 @@ async function createPost(req, res, next) {
         title,
         content: content || null,
         linkUrl: linkUrl || null,
+        ...linkPreview,
         mediaUrl,
         mediaUrls,
       },
-      include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
-        group: { select: { id: true, name: true, slug: true } },
-        _count: { select: { comments: true, reactions: true } },
-      },
+      include: POST_INCLUDE(req.user.userId),
     });
 
-    res.status(201).json({ ...post, myReaction: null, withYouCount: 0, helpedMeCount: 0 });
+    res.status(201).json(formatPost(post, req.user.userId));
   } catch (err) {
     next(err);
   }
@@ -241,7 +244,7 @@ async function deletePost(req, res, next) {
     await prisma.post.delete({ where: { id: req.params.postId } });
 
     if (post.type === 'photo') {
-      const urlsToDelete = post.mediaUrls.length > 0 ? post.mediaUrls : (post.mediaUrl ? [post.mediaUrl] : []);
+      const urlsToDelete = (post.mediaUrls?.length ?? 0) > 0 ? post.mediaUrls : (post.mediaUrl ? [post.mediaUrl] : []);
       await Promise.all(
         urlsToDelete.map((url) =>
           deleteMedia(url).catch((err) => console.error('Failed to delete post image from Cloudinary:', err))

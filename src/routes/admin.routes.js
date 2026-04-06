@@ -66,7 +66,9 @@ router.post('/push-broadcast', broadcastLimiter, [
   body('body').notEmpty().withMessage('body is required'),
   body('target').isIn(['all', 'groups', 'emails']).withMessage('target must be all, groups, or emails'),
   body('groupIds').if(body('target').equals('groups')).isArray({ min: 1 }).withMessage('groupIds required when target is groups'),
+  body('groupIds.*').if(body('target').equals('groups')).isUUID().withMessage('Each groupId must be a valid UUID'),
   body('emails').if(body('target').equals('emails')).isArray({ min: 1 }).withMessage('emails required when target is emails'),
+  body('emails.*').if(body('target').equals('emails')).isEmail().withMessage('Each email must be a valid email address'),
 ], validateMiddleware, pushBroadcast);
 
 module.exports = router;

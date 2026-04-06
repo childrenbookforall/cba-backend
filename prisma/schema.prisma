@@ -111,7 +111,10 @@ model Post {
   type      PostType
   title     String
   content   String?
-  linkUrl   String?
+  linkUrl              String?
+  linkPreviewImage     String?
+  linkPreviewTitle     String?
+  linkPreviewDescription String?
   mediaUrl  String?
   mediaUrls String[]
   isFlagged Boolean  @default(false)
@@ -125,6 +128,10 @@ model Post {
   reactions     Reaction[]
   notifications Notification[]
   flags         Flag[]
+
+  @@index([groupId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model Comment {
@@ -143,6 +150,9 @@ model Comment {
 
   notifications Notification[]
   flags         Flag[]
+
+  @@index([postId])
+  @@index([userId])
 }
 
 model Reaction {
@@ -170,6 +180,8 @@ model Notification {
   commentId   String
   isRead      Boolean          @default(false)
   createdAt   DateTime         @default(now())
+
+  @@index([recipientId])
 }
 
 model RefreshToken {
@@ -180,6 +192,8 @@ model RefreshToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model PushSubscription {

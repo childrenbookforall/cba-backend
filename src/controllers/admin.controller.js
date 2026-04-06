@@ -122,17 +122,23 @@ async function deleteUser(req, res, next) {
       return res.status(400).json({ error: 'You cannot delete yourself' });
     }
 
-    // Fetch and delete Cloudinary images before removing the user
+    // Capture media URLs before deleting — cascade will remove post records
     const photoPosts = await prisma.post.findMany({
       where: { userId: req.params.userId, type: 'photo', mediaUrl: { not: null } },
       select: { mediaUrl: true },
     });
 
-    await Promise.allSettled(
-      photoPosts.map((p) => deleteMedia(p.mediaUrl))
-    );
+    try {
+      await prisma.user.delete({ where: { id: req.params.userId } });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'User not found' });
+      throw err;
+    }
 
-    await prisma.user.delete({ where: { id: req.params.userId } });
+    // Best-effort Cloudinary cleanup after DB delete succeeds
+    Promise.allSettled(
+      photoPosts.map((p) => deleteMedia(p.mediaUrl).catch((e) => console.error('Cloudinary cleanup failed:', e)))
+    );
 
     res.json({ message: 'User deleted' });
   } catch (err) {
@@ -145,14 +151,23 @@ async function deleteGroup(req, res, next) {
     const group = await prisma.group.findUnique({ where: { id: req.params.groupId } });
     if (!group) return res.status(404).json({ error: 'Group not found' });
 
+    // Capture media URLs before deleting — cascade will remove post records
     const photoPosts = await prisma.post.findMany({
       where: { groupId: req.params.groupId, type: 'photo', mediaUrl: { not: null } },
       select: { mediaUrl: true },
     });
 
-    await Promise.allSettled(photoPosts.map((p) => deleteMedia(p.mediaUrl)));
+    try {
+      await prisma.group.delete({ where: { id: req.params.groupId } });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Group not found' });
+      throw err;
+    }
 
-    await prisma.group.delete({ where: { id: req.params.groupId } });
+    // Best-effort Cloudinary cleanup after DB delete succeeds
+    Promise.allSettled(
+      photoPosts.map((p) => deleteMedia(p.mediaUrl).catch((e) => console.error('Cloudinary cleanup failed:', e)))
+    );
 
     res.json({ message: 'Group deleted' });
   } catch (err) {

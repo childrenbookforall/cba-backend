@@ -1,8 +1,18 @@
 const router = require('express').Router();
 const multer = require('multer');
 const { body } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const authMiddleware = require('../middleware/auth.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
+
+const createPostLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many posts created, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
 const { getFeed, getPost, createPost, updatePost, deletePost, flagPost, searchPosts } = require('../controllers/posts.controller');
 
 const ALLOWED_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -25,7 +35,7 @@ router.get('/', getFeed);
 router.get('/search', searchPosts);
 router.get('/:postId', getPost);
 
-router.post('/', mediaUpload.array('media', 10), [
+router.post('/', createPostLimiter, mediaUpload.array('media', 10), [
   body('groupId').notEmpty().withMessage('Group ID is required'),
   body('type').isIn(['text', 'link', 'photo']).withMessage('Invalid post type'),
   body('title').notEmpty().isLength({ max: 200 }).withMessage('Title is required and cannot exceed 200 characters'),

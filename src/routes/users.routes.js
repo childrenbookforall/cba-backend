@@ -1,8 +1,18 @@
 const router = require('express').Router();
 const multer = require('multer');
 const { body } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const authMiddleware = require('../middleware/auth.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
+
+const updateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many update requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
 const { getMe, updateMe, uploadAvatar, getUser } = require('../controllers/users.controller');
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -21,11 +31,11 @@ const avatarUpload = multer({
 
 router.get('/me', authMiddleware, getMe);
 
-router.put('/me', authMiddleware, [
+router.put('/me', authMiddleware, updateLimiter, [
   body('bio').optional().isString().trim().isLength({ max: 500 }).withMessage('Bio cannot exceed 500 characters'),
 ], validateMiddleware, updateMe);
 
-router.post('/me/avatar', authMiddleware, avatarUpload.single('avatar'), uploadAvatar);
+router.post('/me/avatar', authMiddleware, updateLimiter, avatarUpload.single('avatar'), uploadAvatar);
 
 router.get('/:id', authMiddleware, getUser);
 

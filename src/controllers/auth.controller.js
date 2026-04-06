@@ -78,25 +78,34 @@ async function acceptInvite(req, res, next) {
 
     const passwordHash = await bcrypt.hash(req.body.password, 12);
 
-    // Atomically claim the token — only succeeds if usedAt is still null
-    const { count } = await prisma.inviteToken.updateMany({
-      where: { token: req.params.token, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-
-    if (count === 0) {
-      return res.status(400).json({ error: 'Invite has already been used' });
-    }
-
     const nameUpdate = {
       firstName: req.body.firstName,
       ...(req.body.lastName !== undefined && { lastName: req.body.lastName }),
     };
 
-    const user = await prisma.user.update({
-      where: { email: invite.email },
-      data: { passwordHash, ...nameUpdate },
-    });
+    // Atomically claim the token and update the user in one transaction.
+    // If the user update fails the token claim is rolled back, allowing a retry.
+    let user;
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.inviteToken.updateMany({
+          where: { token: req.params.token, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        if (count === 0) {
+          const err = new Error('Invite has already been used');
+          err.clientStatus = 400;
+          throw err;
+        }
+        return tx.user.update({
+          where: { email: invite.email },
+          data: { passwordHash, ...nameUpdate },
+        });
+      });
+    } catch (txErr) {
+      if (txErr.clientStatus) return res.status(txErr.clientStatus).json({ error: txErr.message });
+      throw txErr;
+    }
 
     const token = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, {
       expiresIn: jwtExpiresIn,
@@ -257,20 +266,28 @@ async function resetPassword(req, res, next) {
 
     const passwordHash = await bcrypt.hash(req.body.password, 12);
 
-    // Atomically claim the token
-    const { count } = await prisma.passwordResetToken.updateMany({
-      where: { token: req.params.token, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-
-    if (count === 0) {
-      return res.status(400).json({ error: 'Reset link is invalid or has expired' });
+    // Atomically claim the token and update the password in one transaction.
+    // If the user update fails the token claim is rolled back, allowing a retry.
+    try {
+      await prisma.$transaction(async (tx) => {
+        const { count } = await tx.passwordResetToken.updateMany({
+          where: { token: req.params.token, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        if (count === 0) {
+          const err = new Error('Reset link is invalid or has expired');
+          err.clientStatus = 400;
+          throw err;
+        }
+        await tx.user.update({
+          where: { email: resetToken.email },
+          data: { passwordHash },
+        });
+      });
+    } catch (txErr) {
+      if (txErr.clientStatus) return res.status(txErr.clientStatus).json({ error: txErr.message });
+      throw txErr;
     }
-
-    await prisma.user.update({
-      where: { email: resetToken.email },
-      data: { passwordHash },
-    });
 
     res.json({ message: 'Password updated successfully' });
   } catch (err) {

@@ -10,6 +10,7 @@ async function getNotifications(req, res, next) {
         comment: { select: { id: true, content: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     });
 
     res.json(notifications);
@@ -62,9 +63,15 @@ async function subscribe(req, res, next) {
       return res.status(400).json({ error: 'Invalid push subscription' });
     }
 
+    // Prevent one user from overwriting another user's push subscription
+    const existing = await prisma.pushSubscription.findUnique({ where: { endpoint } });
+    if (existing && existing.userId !== req.user.userId) {
+      return res.status(409).json({ error: 'Endpoint already registered to another account' });
+    }
+
     await prisma.pushSubscription.upsert({
       where: { endpoint },
-      update: { p256dh: keys.p256dh, auth: keys.auth },
+      update: { userId: req.user.userId, p256dh: keys.p256dh, auth: keys.auth },
       create: { userId: req.user.userId, endpoint, p256dh: keys.p256dh, auth: keys.auth },
     });
 
