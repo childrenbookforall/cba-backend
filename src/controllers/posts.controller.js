@@ -59,6 +59,7 @@ async function getTopFeed(filterGroupIds, userId, page) {
       AND p."isPinned" = false
     GROUP BY p.id
     ORDER BY
+      p."isDownranked" ASC,
       (COUNT(DISTINCT r.id) + 2.0 * COUNT(DISTINCT c.id) + 5.0 / (EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 1))::float / POWER(
         EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 2, 1.8
       ) DESC

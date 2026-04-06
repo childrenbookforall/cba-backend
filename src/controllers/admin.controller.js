@@ -334,6 +334,26 @@ async function togglePinPost(req, res, next) {
   }
 }
 
+async function toggleDownrankPost(req, res, next) {
+  try {
+    const post = await prisma.post.findUnique({ where: { id: req.params.postId } });
+
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const updated = await prisma.post.update({
+      where: { id: req.params.postId },
+      data: { isDownranked: !post.isDownranked },
+      select: { id: true, isDownranked: true },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Moderation ───────────────────────────────────────────────────────────────
 
 async function listFlags(req, res, next) {
@@ -454,7 +474,7 @@ async function pushBroadcast(req, res, next) {
 module.exports = {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
   listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
-  togglePinPost,
+  togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
 };

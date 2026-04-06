@@ -115,8 +115,9 @@ model Post {
   mediaUrl  String?
   mediaUrls String[]
   isFlagged Boolean  @default(false)
-  isPinned  Boolean  @default(false)
-  pinnedAt  DateTime?
+  isPinned     Boolean  @default(false)
+  pinnedAt     DateTime?
+  isDownranked Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

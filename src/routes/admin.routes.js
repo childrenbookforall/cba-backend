@@ -7,7 +7,7 @@ const validateMiddleware = require('../middleware/validate.middleware');
 const {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
   listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
-  togglePinPost,
+  togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
 } = require('../controllers/admin.controller');
@@ -45,6 +45,7 @@ router.delete('/groups/:groupId/members/:userId', removeGroupMember);
 
 // Posts
 router.patch('/posts/:postId/pin', togglePinPost);
+router.patch('/posts/:postId/downrank', toggleDownrankPost);
 
 // Moderation
 router.get('/flags', listFlags);
