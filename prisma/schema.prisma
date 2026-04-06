@@ -113,6 +113,7 @@ model Post {
   content   String?
   linkUrl   String?
   mediaUrl  String?
+  mediaUrls String[]
   isFlagged Boolean  @default(false)
   isPinned  Boolean  @default(false)
   pinnedAt  DateTime?

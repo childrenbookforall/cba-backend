@@ -59,8 +59,8 @@ async function getTopFeed(filterGroupIds, userId, page) {
       AND p."isPinned" = false
     GROUP BY p.id
     ORDER BY
-      (COUNT(DISTINCT r.id) + 2.0 * COUNT(DISTINCT c.id))::float / POWER(
-        EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 2, 1.5
+      (COUNT(DISTINCT r.id) + 2.0 * COUNT(DISTINCT c.id) + 5.0 / (EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 1))::float / POWER(
+        EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 2, 1.8
       ) DESC
     LIMIT ${FEED_LIMIT} OFFSET ${offset}
   `;
@@ -165,8 +165,10 @@ async function createPost(req, res, next) {
     }
 
     let mediaUrl = null;
-    if (req.file) {
-      mediaUrl = await uploadMedia(req.file.buffer, 'posts');
+    let mediaUrls = [];
+    if (req.files && req.files.length > 0) {
+      mediaUrls = await Promise.all(req.files.map((f) => uploadMedia(f.buffer, 'posts')));
+      mediaUrl = mediaUrls[0];
     }
 
     const post = await prisma.post.create({
@@ -178,6 +180,7 @@ async function createPost(req, res, next) {
         content: content || null,
         linkUrl: linkUrl || null,
         mediaUrl,
+        mediaUrls,
       },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
@@ -236,9 +239,12 @@ async function deletePost(req, res, next) {
 
     await prisma.post.delete({ where: { id: req.params.postId } });
 
-    if (post.type === 'photo' && post.mediaUrl) {
-      await deleteMedia(post.mediaUrl).catch((err) =>
-        console.error('Failed to delete post image from Cloudinary:', err)
+    if (post.type === 'photo') {
+      const urlsToDelete = post.mediaUrls.length > 0 ? post.mediaUrls : (post.mediaUrl ? [post.mediaUrl] : []);
+      await Promise.all(
+        urlsToDelete.map((url) =>
+          deleteMedia(url).catch((err) => console.error('Failed to delete post image from Cloudinary:', err))
+        )
       );
     }
 
