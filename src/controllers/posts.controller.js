@@ -214,6 +214,14 @@ async function updatePost(req, res, next) {
     const data = { title: req.body.title };
     if (req.body.content !== undefined) data.content = req.body.content || null;
 
+    if (post.type === 'link' && req.body.linkUrl !== undefined) {
+      data.linkUrl = req.body.linkUrl || null;
+      if (data.linkUrl && data.linkUrl !== post.linkUrl) {
+        const linkPreview = (await fetchLinkPreview(data.linkUrl)) ?? {};
+        Object.assign(data, linkPreview);
+      }
+    }
+
     const updated = await prisma.post.update({
       where: { id: req.params.postId },
       data,

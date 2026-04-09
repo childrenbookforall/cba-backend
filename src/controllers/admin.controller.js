@@ -65,7 +65,7 @@ async function listUsers(req, res, next) {
   try {
     const cursor = req.query.cursor;
 
-    const users = await prisma.user.findMany({
+    const rawUsers = await prisma.user.findMany({
       select: {
         id: true,
         firstName: true,
@@ -74,11 +74,17 @@ async function listUsers(req, res, next) {
         role: true,
         isActive: true,
         createdAt: true,
+        passwordHash: true,
       },
       orderBy: { createdAt: 'desc' },
       take: ADMIN_LIST_LIMIT,
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
     });
+
+    const users = rawUsers.map(({ passwordHash, ...u }) => ({
+      ...u,
+      invitePending: passwordHash === 'INVITE_PENDING',
+    }));
 
     const nextCursor = users.length === ADMIN_LIST_LIMIT ? users[users.length - 1].id : null;
 
