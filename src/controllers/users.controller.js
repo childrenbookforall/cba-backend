@@ -11,6 +11,7 @@ async function getMe(req, res, next) {
         firstName: true,
         lastName: true,
         bio: true,
+        birthday: true,
         avatarUrl: true,
         role: true,
         createdAt: true,
@@ -25,15 +26,22 @@ async function getMe(req, res, next) {
 
 async function updateMe(req, res, next) {
   try {
+    const data = {};
+    if ('bio' in req.body) data.bio = req.body.bio;
+    if ('birthday' in req.body) {
+      data.birthday = req.body.birthday ? new Date(req.body.birthday) : null;
+    }
+
     const user = await prisma.user.update({
       where: { id: req.user.userId },
-      data: { bio: req.body.bio },
+      data,
       select: {
         id: true,
         email: true,
         firstName: true,
         lastName: true,
         bio: true,
+        birthday: true,
         avatarUrl: true,
         role: true,
         createdAt: true,
@@ -68,6 +76,7 @@ async function uploadAvatar(req, res, next) {
         firstName: true,
         lastName: true,
         bio: true,
+        birthday: true,
         avatarUrl: true,
         role: true,
         createdAt: true,

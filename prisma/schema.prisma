@@ -42,6 +42,7 @@ model User {
   firstName    String
   lastName     String?
   bio          String?
+  birthday     DateTime?
   avatarUrl    String?
   role         Role     @default(member)
   isActive     Boolean  @default(true)

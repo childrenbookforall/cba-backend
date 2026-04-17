@@ -33,6 +33,7 @@ router.get('/me', authMiddleware, getMe);
 
 router.put('/me', authMiddleware, updateLimiter, [
   body('bio').optional().isString().trim().isLength({ max: 500 }).withMessage('Bio cannot exceed 500 characters'),
+  body('birthday').optional({ nullable: true }).isISO8601().withMessage('Birthday must be a valid date').toDate(),
 ], validateMiddleware, updateMe);
 
 router.post('/me/avatar', authMiddleware, updateLimiter, avatarUpload.single('avatar'), uploadAvatar);
