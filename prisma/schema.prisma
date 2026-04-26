@@ -28,6 +28,7 @@ enum NotificationType {
   post_comment
   comment_reply
   thread_comment
+  mention
 }
 
 enum FlagContentType {
@@ -60,6 +61,7 @@ model User {
   flagsReviewed       Flag[]           @relation("ReviewedBy")
   pushSubscriptions   PushSubscription[]
   refreshTokens       RefreshToken[]
+  mentions            Mention[]
 }
 
 model InviteToken {
@@ -129,6 +131,7 @@ model Post {
   reactions     Reaction[]
   notifications Notification[]
   flags         Flag[]
+  mentions      Mention[]
 
   @@index([groupId])
   @@index([userId])
@@ -151,6 +154,7 @@ model Comment {
 
   notifications Notification[]
   flags         Flag[]
+  mentions      Mention[]
 
   @@index([postId])
   @@index([userId])
@@ -177,8 +181,8 @@ model Notification {
   type        NotificationType
   post        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
   postId      String
-  comment     Comment          @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  commentId   String
+  comment     Comment?         @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId   String?
   isRead      Boolean          @default(false)
   createdAt   DateTime         @default(now())
 
@@ -205,6 +209,22 @@ model PushSubscription {
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
+}
+
+model Mention {
+  id              String   @id @default(uuid())
+  mentionedUser   User     @relation(fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  mentionedUserId String
+  post            Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId          String?
+  comment         Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId       String?
+  createdAt       DateTime @default(now())
+
+  // postId is non-null for post-level mentions; commentId is non-null for comment-level mentions
+  @@unique([mentionedUserId, postId])
+  @@unique([mentionedUserId, commentId])
+  @@index([mentionedUserId])
 }
 
 model Flag {

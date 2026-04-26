@@ -13,7 +13,16 @@ const updateLimiter = rateLimit({
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
 });
-const { getMe, updateMe, uploadAvatar, getUser } = require('../controllers/users.controller');
+
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many search requests, please slow down' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+const { getMe, updateMe, uploadAvatar, getUser, searchUsers } = require('../controllers/users.controller');
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -28,6 +37,8 @@ const avatarUpload = multer({
     }
   },
 });
+
+router.get('/search', authMiddleware, searchLimiter, searchUsers);
 
 router.get('/me', authMiddleware, getMe);
 

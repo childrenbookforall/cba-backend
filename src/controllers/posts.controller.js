@@ -2,6 +2,7 @@ const { Prisma } = require('@prisma/client');
 const prisma = require('../prisma/client');
 const { uploadMedia, deleteMedia } = require('../services/upload.service');
 const { fetchLinkPreview } = require('../services/linkPreview.service');
+const { parseMentions, processMentions } = require('../services/mention.service');
 
 // Internal helper — returns group IDs the given user belongs to
 async function getUserGroupIds(userId) {
@@ -194,6 +195,13 @@ async function createPost(req, res, next) {
     });
 
     res.status(201).json(formatPost(post, req.user.userId));
+
+    const mentionedUserIds = parseMentions(title, content);
+    if (mentionedUserIds.length > 0) {
+      processMentions({ actorId: req.user.userId, mentionedUserIds, post }).catch((err) => {
+        console.error('Failed to process post mentions:', err);
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -229,6 +237,18 @@ async function updatePost(req, res, next) {
     });
 
     res.json(formatPost(updated, req.user.userId));
+
+    // Fire mention processing as a non-critical side effect
+    const mentionedUserIds = parseMentions(req.body.title, req.body.content);
+    if (mentionedUserIds.length > 0) {
+      prisma.mention
+        .findMany({ where: { postId: post.id, commentId: null }, select: { mentionedUserId: true } })
+        .then((existing) => {
+          const previousUserIds = existing.map((m) => m.mentionedUserId);
+          return processMentions({ actorId: req.user.userId, mentionedUserIds, post: updated, previousUserIds });
+        })
+        .catch((err) => console.error('Failed to process post mentions on update:', err));
+    }
   } catch (err) {
     next(err);
   }

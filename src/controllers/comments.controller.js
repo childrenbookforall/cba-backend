@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { parseMentions, processMentions } = require('../services/mention.service');
 
 async function getComments(req, res, next) {
   try {
@@ -89,17 +90,26 @@ async function createComment(req, res, next) {
 
     res.status(201).json(comment);
 
-    // Fire notifications as a non-critical side effect — never fail the request over this
-    createNotification({ comment, post, actorId: req.user.userId, parentComment }).catch((err) => {
-      console.error('Failed to create comment notification:', err);
-    });
+    // Fire notifications + mentions as non-critical side effects.
+    // Chain them so mention notifications skip users already notified via thread/reply/post paths.
+    // Mentions take priority: users who are tagged skip thread/reply/post notifications
+    // and receive a mention notification instead.
+    const mentionedUserIds = parseMentions(content);
+    createNotification({ comment, post, actorId: req.user.userId, parentComment, mentionedUserIds })
+      .then(() => {
+        if (mentionedUserIds.length > 0) {
+          return processMentions({ actorId: req.user.userId, mentionedUserIds, post, comment });
+        }
+      })
+      .catch((err) => console.error('Failed to create comment notification:', err));
   } catch (err) {
     next(err);
   }
 }
 
-async function createNotification({ comment, post, actorId, parentComment }) {
-  const notified = new Set([actorId]); // actor never receives their own notifications
+async function createNotification({ comment, post, actorId, parentComment, mentionedUserIds = [] }) {
+  // Mentioned users are reserved for the mention notification — exclude them here
+  const notified = new Set([actorId, ...mentionedUserIds]);
   const toCreate = [];
 
   // 1. Direct reply — notify the parent comment's author
@@ -178,6 +188,18 @@ async function updateComment(req, res, next) {
     });
 
     res.json(updated);
+
+    const mentionedUserIds = parseMentions(req.body.content);
+    if (mentionedUserIds.length > 0) {
+      prisma.mention
+        .findMany({ where: { commentId: comment.id }, select: { mentionedUserId: true } })
+        .then((existing) => {
+          const previousUserIds = existing.map((m) => m.mentionedUserId);
+          const post = { id: comment.postId, groupId: comment.post.groupId };
+          return processMentions({ actorId: req.user.userId, mentionedUserIds, post, comment, previousUserIds });
+        })
+        .catch((err) => console.error('Failed to process comment mentions on update:', err));
+    }
   } catch (err) {
     next(err);
   }

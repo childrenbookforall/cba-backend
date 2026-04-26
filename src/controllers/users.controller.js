@@ -114,4 +114,61 @@ async function getUser(req, res, next) {
   }
 }
 
-module.exports = { getMe, updateMe, uploadAvatar, getUser };
+async function searchUsers(req, res, next) {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json([]);
+
+    let candidateIds;
+
+    if (req.query.groupId) {
+      // Scope to a specific group — verify membership first
+      const membership = await prisma.groupMember.findUnique({
+        where: { userId_groupId: { userId: req.user.userId, groupId: req.query.groupId } },
+      });
+      if (!membership) return res.status(403).json({ error: 'You are not a member of this group' });
+
+      const members = await prisma.groupMember.findMany({
+        where: { groupId: req.query.groupId },
+        select: { userId: true },
+      });
+      candidateIds = members.map((m) => m.userId).filter((id) => id !== req.user.userId);
+    } else {
+      // Fall back to all users sharing any group with the requester
+      const memberships = await prisma.groupMember.findMany({
+        where: { userId: req.user.userId },
+        select: { groupId: true },
+      });
+      const groupIds = memberships.map((m) => m.groupId);
+      if (groupIds.length === 0) return res.json([]);
+
+      const sharedMembers = await prisma.groupMember.findMany({
+        where: { groupId: { in: groupIds } },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+      candidateIds = sharedMembers.map((m) => m.userId).filter((id) => id !== req.user.userId);
+    }
+
+    if (candidateIds.length === 0) return res.json([]);
+
+    const users = await prisma.user.findMany({
+      where: {
+        id: { in: candidateIds },
+        isActive: true,
+        OR: [
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, firstName: true, lastName: true, avatarUrl: true },
+      take: 10,
+    });
+
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getMe, updateMe, uploadAvatar, getUser, searchUsers };
