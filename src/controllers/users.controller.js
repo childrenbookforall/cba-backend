@@ -157,11 +157,12 @@ async function searchUsers(req, res, next) {
         id: { in: candidateIds },
         isActive: true,
         OR: [
-          { firstName: { contains: q, mode: 'insensitive' } },
-          { lastName: { contains: q, mode: 'insensitive' } },
+          { firstName: { startsWith: q, mode: 'insensitive' } },
+          { lastName: { startsWith: q, mode: 'insensitive' } },
         ],
       },
       select: { id: true, firstName: true, lastName: true, avatarUrl: true },
+      orderBy: { firstName: 'asc' },
       take: 5,
     });
 
