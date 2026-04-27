@@ -154,9 +154,24 @@ async function getPost(req, res, next) {
   }
 }
 
+const MENTION_TOKEN_RE = /@\[([^\]]+)\]\([^)]+\)/g;
+function displayLen(s) {
+  return s ? s.replace(MENTION_TOKEN_RE, '@$1').length : 0;
+}
+
 async function createPost(req, res, next) {
   try {
     const { groupId, type, title, content, linkUrl } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    if (title.length > 200) {
+      return res.status(400).json({ error: 'Title cannot exceed 200 characters' });
+    }
+    if (content && displayLen(content) > 10000) {
+      return res.status(400).json({ error: 'Content cannot exceed 10,000 characters' });
+    }
 
     // Verify membership
     const membership = await prisma.groupMember.findUnique({
@@ -217,6 +232,16 @@ async function updatePost(req, res, next) {
 
     if (post.userId !== req.user.userId) {
       return res.status(403).json({ error: 'You can only edit your own posts' });
+    }
+
+    if (!req.body.title || !req.body.title.trim()) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    if (req.body.title.length > 200) {
+      return res.status(400).json({ error: 'Title cannot exceed 200 characters' });
+    }
+    if (req.body.content && displayLen(req.body.content) > 10000) {
+      return res.status(400).json({ error: 'Content cannot exceed 10,000 characters' });
     }
 
     const data = { title: req.body.title };

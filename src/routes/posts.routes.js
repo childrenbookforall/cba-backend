@@ -39,7 +39,7 @@ router.post('/', createPostLimiter, mediaUpload.array('media', 10), [
   body('groupId').notEmpty().withMessage('Group ID is required'),
   body('type').isIn(['text', 'link', 'photo']).withMessage('Invalid post type'),
   body('title').notEmpty().isLength({ max: 200 }).withMessage('Title is required and cannot exceed 200 characters'),
-  body('content').optional().isString().isLength({ max: 10000 }).withMessage('Content cannot exceed 10000 characters'),
+  body('content').optional().isString().isLength({ max: 11000 }).withMessage('Content cannot exceed 10,000 characters'),
   body('linkUrl').if(body('type').equals('link')).notEmpty().isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid http/https URL is required for link posts'),
   body('type').custom((type, { req }) => {
     if (type === 'photo' && (!req.files || req.files.length === 0)) throw new Error('At least one photo file is required for photo posts');
@@ -50,7 +50,7 @@ router.post('/', createPostLimiter, mediaUpload.array('media', 10), [
 
 router.put('/:postId', [
   body('title').notEmpty().isLength({ max: 200 }).withMessage('Title is required and cannot exceed 200 characters'),
-  body('content').optional().isString().isLength({ max: 10000 }).withMessage('Content cannot exceed 10000 characters'),
+  body('content').optional().isString().isLength({ max: 11000 }).withMessage('Content cannot exceed 10,000 characters'),
 ], validateMiddleware, updatePost);
 
 router.delete('/:postId', deletePost);

@@ -19,13 +19,13 @@ router.use(authMiddleware);
 // Post-scoped routes
 router.get('/posts/:postId/comments', getComments);
 router.post('/posts/:postId/comments', createCommentLimiter, [
-  body('content').notEmpty().isLength({ max: 5000 }).withMessage('Content is required and cannot exceed 5000 characters'),
+  body('content').notEmpty().isLength({ max: 11000 }).withMessage('Content is required and cannot exceed 10,000 characters'),
   body('parentId').optional().isUUID().withMessage('Invalid parent comment ID'),
 ], validateMiddleware, createComment);
 
 // Comment-scoped routes
 router.put('/comments/:commentId', [
-  body('content').notEmpty().isLength({ max: 5000 }).withMessage('Content is required and cannot exceed 5000 characters'),
+  body('content').notEmpty().isLength({ max: 11000 }).withMessage('Content is required and cannot exceed 10,000 characters'),
 ], validateMiddleware, updateComment);
 
 router.delete('/comments/:commentId', deleteComment);

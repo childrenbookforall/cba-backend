@@ -130,8 +130,8 @@ async function deleteUser(req, res, next) {
 
     // Capture media URLs before deleting — cascade will remove post records
     const photoPosts = await prisma.post.findMany({
-      where: { userId: req.params.userId, type: 'photo', mediaUrl: { not: null } },
-      select: { mediaUrl: true },
+      where: { userId: req.params.userId, type: 'photo' },
+      select: { mediaUrl: true, mediaUrls: true },
     });
 
     try {
@@ -142,8 +142,11 @@ async function deleteUser(req, res, next) {
     }
 
     // Best-effort Cloudinary cleanup after DB delete succeeds
+    const urlsToDelete = photoPosts.flatMap((p) =>
+      (p.mediaUrls?.length ?? 0) > 0 ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : [])
+    );
     Promise.allSettled(
-      photoPosts.map((p) => deleteMedia(p.mediaUrl).catch((e) => console.error('Cloudinary cleanup failed:', e)))
+      urlsToDelete.map((url) => deleteMedia(url).catch((e) => console.error('Cloudinary cleanup failed:', e)))
     );
 
     res.json({ message: 'User deleted' });
@@ -159,8 +162,8 @@ async function deleteGroup(req, res, next) {
 
     // Capture media URLs before deleting — cascade will remove post records
     const photoPosts = await prisma.post.findMany({
-      where: { groupId: req.params.groupId, type: 'photo', mediaUrl: { not: null } },
-      select: { mediaUrl: true },
+      where: { groupId: req.params.groupId, type: 'photo' },
+      select: { mediaUrl: true, mediaUrls: true },
     });
 
     try {
@@ -171,8 +174,11 @@ async function deleteGroup(req, res, next) {
     }
 
     // Best-effort Cloudinary cleanup after DB delete succeeds
+    const urlsToDelete = photoPosts.flatMap((p) =>
+      (p.mediaUrls?.length ?? 0) > 0 ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : [])
+    );
     Promise.allSettled(
-      photoPosts.map((p) => deleteMedia(p.mediaUrl).catch((e) => console.error('Cloudinary cleanup failed:', e)))
+      urlsToDelete.map((url) => deleteMedia(url).catch((e) => console.error('Cloudinary cleanup failed:', e)))
     );
 
     res.json({ message: 'Group deleted' });

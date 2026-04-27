@@ -162,7 +162,7 @@ async function searchUsers(req, res, next) {
         ],
       },
       select: { id: true, firstName: true, lastName: true, avatarUrl: true },
-      take: 10,
+      take: 5,
     });
 
     res.json(users);

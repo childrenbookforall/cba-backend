@@ -1,6 +1,11 @@
 const prisma = require('../prisma/client');
 const { parseMentions, processMentions } = require('../services/mention.service');
 
+const MENTION_TOKEN_RE = /@\[([^\]]+)\]\([^)]+\)/g;
+function displayLen(s) {
+  return s ? s.replace(MENTION_TOKEN_RE, '@$1').length : 0;
+}
+
 async function getComments(req, res, next) {
   try {
     const post = await prisma.post.findUnique({ where: { id: req.params.postId } });
@@ -68,6 +73,13 @@ async function createComment(req, res, next) {
     }
 
     const { content, parentId } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Comment cannot be empty' });
+    }
+    if (displayLen(content) > 10000) {
+      return res.status(400).json({ error: 'Comment cannot exceed 10,000 characters' });
+    }
 
     // If replying, verify the parent comment exists and belongs to this post
     let parentComment = null;
@@ -179,9 +191,18 @@ async function updateComment(req, res, next) {
       return res.status(403).json({ error: 'You are not a member of this group' });
     }
 
+    const { content } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Comment cannot be empty' });
+    }
+    if (displayLen(content) > 10000) {
+      return res.status(400).json({ error: 'Comment cannot exceed 10,000 characters' });
+    }
+
     const updated = await prisma.comment.update({
       where: { id: req.params.commentId },
-      data: { content: req.body.content },
+      data: { content },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
       },
@@ -189,7 +210,7 @@ async function updateComment(req, res, next) {
 
     res.json(updated);
 
-    const mentionedUserIds = parseMentions(req.body.content);
+    const mentionedUserIds = parseMentions(content);
     if (mentionedUserIds.length > 0) {
       prisma.mention
         .findMany({ where: { commentId: comment.id }, select: { mentionedUserId: true } })

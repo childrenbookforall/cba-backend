@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { sendPush } = require('./push.service');
 
 // Matches @[Display Name](uuid)
 const MENTION_REGEX = /@\[([^\]]+)\]\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)/gi;
@@ -68,6 +69,40 @@ async function processMentions({ actorId, mentionedUserIds, post, comment = null
     })),
     skipDuplicates: true,
   });
+
+  sendMentionPushes({ actorId, recipientIds: validUsers.map((u) => u.id), postId: post.id, postTitle: post.title })
+    .catch((err) => console.error('Failed to send mention push notifications:', err));
+}
+
+async function sendMentionPushes({ actorId, recipientIds, postId, postTitle }) {
+  const [actor, subscriptions] = await Promise.all([
+    prisma.user.findUnique({ where: { id: actorId }, select: { firstName: true, lastName: true } }),
+    prisma.pushSubscription.findMany({ where: { userId: { in: recipientIds } } }),
+  ]);
+
+  if (subscriptions.length === 0) return;
+
+  const actorName = actor
+    ? `${actor.firstName}${actor.lastName ? ` ${actor.lastName}` : ''}`
+    : 'Someone';
+
+  const payload = {
+    title: `${actorName} mentioned you`,
+    body: postTitle ?? 'Tap to view',
+    url: `/posts/${postId}`,
+  };
+
+  const expired = [];
+  await Promise.all(
+    subscriptions.map(async (sub) => {
+      const ok = await sendPush(sub, payload);
+      if (!ok) expired.push(sub.id);
+    })
+  );
+
+  if (expired.length > 0) {
+    await prisma.pushSubscription.deleteMany({ where: { id: { in: expired } } });
+  }
 }
 
 module.exports = { parseMentions, processMentions };
