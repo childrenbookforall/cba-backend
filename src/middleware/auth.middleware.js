@@ -2,6 +2,9 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../prisma/client');
 const { jwtSecret } = require('../config/env');
 
+let activityCache = new Set();
+let activityCacheDate = new Date().toISOString().slice(0, 10);
+
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
 
@@ -24,6 +27,23 @@ async function authMiddleware(req, res, next) {
     }
 
     req.user = { userId: user.id, role: user.role };
+
+    if (process.env.NODE_ENV !== 'test') {
+      const today = new Date().toISOString().slice(0, 10);
+      if (today !== activityCacheDate) {
+        activityCache = new Set();
+        activityCacheDate = today;
+      }
+      if (!activityCache.has(user.id)) {
+        activityCache.add(user.id);
+        prisma.userDailyActivity.upsert({
+          where: { userId_date: { userId: user.id, date: new Date(today) } },
+          update: {},
+          create: { userId: user.id, date: new Date(today) },
+        }).catch((err) => console.error('Failed to record user activity:', err));
+      }
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });

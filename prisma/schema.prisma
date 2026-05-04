@@ -62,6 +62,7 @@ model User {
   pushSubscriptions   PushSubscription[]
   refreshTokens       RefreshToken[]
   mentions            Mention[]
+  dailyActivities     UserDailyActivity[]
 }
 
 model InviteToken {
@@ -225,6 +226,15 @@ model Mention {
   @@unique([mentionedUserId, postId])
   @@unique([mentionedUserId, commentId])
   @@index([mentionedUserId])
+}
+
+model UserDailyActivity {
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  date   DateTime @db.Date
+
+  @@id([userId, date])
+  @@index([date])
 }
 
 model Flag {
