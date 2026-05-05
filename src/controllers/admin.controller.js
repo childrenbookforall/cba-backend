@@ -498,10 +498,61 @@ async function pushBroadcast(req, res, next) {
   }
 }
 
+// ── Site notification ─────────────────────────────────────────────────────────
+
+async function getSiteNotification(req, res, next) {
+  try {
+    const notification = await prisma.siteNotification.findFirst();
+    res.json(notification ?? null);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function upsertSiteNotification(req, res, next) {
+  try {
+    const { message, linkText, linkUrl, isActive } = req.body;
+
+    const existing = await prisma.siteNotification.findFirst();
+
+    const data = {
+      message,
+      linkText: linkText || null,
+      linkUrl: linkUrl || null,
+      ...(isActive !== undefined && { isActive }),
+    };
+
+    const notification = existing
+      ? await prisma.siteNotification.update({ where: { id: existing.id }, data })
+      : await prisma.siteNotification.create({ data: { ...data, isActive: isActive ?? false } });
+
+    res.json(notification);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function toggleSiteNotification(req, res, next) {
+  try {
+    const existing = await prisma.siteNotification.findFirst();
+    if (!existing) {
+      return res.status(404).json({ error: 'No notification configured' });
+    }
+    const notification = await prisma.siteNotification.update({
+      where: { id: existing.id },
+      data: { isActive: !existing.isActive },
+    });
+    res.json(notification);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
   listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
   togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
+  getSiteNotification, upsertSiteNotification, toggleSiteNotification,
 };

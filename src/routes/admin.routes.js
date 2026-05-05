@@ -10,6 +10,7 @@ const {
   togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
+  getSiteNotification, upsertSiteNotification, toggleSiteNotification,
 } = require('../controllers/admin.controller');
 
 router.use(authMiddleware, adminMiddleware);
@@ -70,5 +71,15 @@ router.post('/push-broadcast', broadcastLimiter, [
   body('emails').if(body('target').equals('emails')).isArray({ min: 1 }).withMessage('emails required when target is emails'),
   body('emails.*').if(body('target').equals('emails')).isEmail().withMessage('Each email must be a valid email address'),
 ], validateMiddleware, pushBroadcast);
+
+// Site notification
+router.get('/site-notification', getSiteNotification);
+router.put('/site-notification', [
+  body('message').notEmpty().withMessage('message is required'),
+  body('linkUrl').optional({ nullable: true, checkFalsy: true }).isURL().withMessage('linkUrl must be a valid URL'),
+  body('linkText').optional({ nullable: true }).isString().trim(),
+  body('isActive').optional().isBoolean(),
+], validateMiddleware, upsertSiteNotification);
+router.patch('/site-notification/toggle', toggleSiteNotification);
 
 module.exports = router;

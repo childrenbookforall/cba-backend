@@ -237,6 +237,16 @@ model UserDailyActivity {
   @@index([date])
 }
 
+model SiteNotification {
+  id        String   @id @default(uuid())
+  message   String
+  linkText  String?
+  linkUrl   String?
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Flag {
   id          String          @id @default(uuid())
   flaggedBy   User?           @relation("FlaggedBy", fields: [flaggedById], references: [id], onDelete: SetNull)

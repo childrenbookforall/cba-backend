@@ -12,6 +12,8 @@ const commentRoutes = require('./routes/comments.routes');
 const reactionRoutes = require('./routes/reactions.routes');
 const notificationRoutes = require('./routes/notifications.routes');
 const adminRoutes = require('./routes/admin.routes');
+const authMiddleware = require('./middleware/auth.middleware');
+const prisma = require('./prisma/client');
 
 const app = express();
 
@@ -31,6 +33,16 @@ app.use('/api', commentRoutes);
 app.use('/api', reactionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Public (authenticated) site-wide notification endpoint
+app.get('/api/site-notification', authMiddleware, async (req, res, next) => {
+  try {
+    const notification = await prisma.siteNotification.findFirst({ where: { isActive: true } });
+    res.json(notification ?? null);
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.use(errorMiddleware);
 
