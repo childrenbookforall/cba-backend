@@ -17,7 +17,7 @@ async function listMyGroups(req, res, next) {
     const memberCounts = await prisma.groupMember.findMany({
       where: {
         groupId: { in: groupIds },
-        user: { passwordHash: { not: 'INVITE_PENDING' } },
+        user: { passwordHash: { not: 'INVITE_PENDING' }, role: 'member' },
       },
       select: { groupId: true },
     });
@@ -61,4 +61,53 @@ async function getGroup(req, res, next) {
   }
 }
 
-module.exports = { listMyGroups, getGroup };
+async function listGroupMembers(req, res, next) {
+  try {
+    const { groupId } = req.params;
+    const { cursor, search } = req.query;
+    const take = 30;
+
+    const membership = await prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId: req.user.userId, groupId } },
+    });
+    if (!membership) return res.status(403).json({ error: 'You are not a member of this group' });
+
+    const where = {
+      groupId,
+      user: {
+        AND: [
+          { passwordHash: { not: 'INVITE_PENDING' } },
+          { role: 'member' },
+          ...(search ? [{ OR: [
+            { firstName: { contains: search, mode: 'insensitive' } },
+            { lastName: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ]}] : []),
+        ],
+      },
+    };
+
+    const rows = await prisma.groupMember.findMany({
+      where,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true } },
+      },
+      orderBy: { joinedAt: 'asc' },
+      take: take + 1,
+      ...(cursor ? { cursor: { userId_groupId: { userId: cursor, groupId } }, skip: 1 } : {}),
+    });
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const nextCursor = hasMore ? page[page.length - 1].userId : null;
+
+    res.json({
+      members: page.map((m) => ({ ...m.user, joinedAt: m.joinedAt })),
+      nextCursor,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listMyGroups, getGroup, listGroupMembers };
