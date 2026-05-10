@@ -11,6 +11,8 @@ const postRoutes = require('./routes/posts.routes');
 const commentRoutes = require('./routes/comments.routes');
 const reactionRoutes = require('./routes/reactions.routes');
 const notificationRoutes = require('./routes/notifications.routes');
+const bookmarkRoutes = require('./routes/bookmarks.routes');
+const messageRoutes = require('./routes/messages.routes');
 const adminRoutes = require('./routes/admin.routes');
 const authMiddleware = require('./middleware/auth.middleware');
 const prisma = require('./prisma/client');
@@ -32,6 +34,8 @@ app.use('/api/posts', postRoutes);
 app.use('/api', commentRoutes);
 app.use('/api', reactionRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api', bookmarkRoutes);
+app.use('/api', messageRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Public (authenticated) site-wide notification endpoint

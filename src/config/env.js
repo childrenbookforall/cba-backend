@@ -6,6 +6,9 @@ const required = [
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
   'CLOUDINARY_API_SECRET',
+  'VAPID_MAILTO',
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY',
 ];
 
 required.forEach((key) => {

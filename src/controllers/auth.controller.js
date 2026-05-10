@@ -18,7 +18,7 @@ function setRefreshCookie(res, token) {
   res.cookie('refreshToken', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000,
     path: '/',
   });
@@ -160,17 +160,39 @@ async function refresh(req, res, next) {
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
 
-    // Rotate: invalidate old, issue new
-    await prisma.refreshToken.update({ where: { id: stored.id }, data: { usedAt: new Date() } });
-
-    const user = await prisma.user.findUnique({
-      where: { id: stored.userId },
-      select: { id: true, role: true, isActive: true },
-    });
-    if (!user || !user.isActive) return res.status(401).json({ error: 'User not found' });
+    // Rotate atomically: mark old used, verify user, create new token in one transaction
+    let user, newRefreshToken;
+    try {
+      ({ user, newRefreshToken } = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.refreshToken.updateMany({
+          where: { id: stored.id, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        if (count === 0) {
+          const err = new Error('Invalid or expired refresh token');
+          err.clientStatus = 401;
+          throw err;
+        }
+        const u = await tx.user.findUnique({
+          where: { id: stored.userId },
+          select: { id: true, role: true, isActive: true },
+        });
+        if (!u || !u.isActive) {
+          const err = new Error('User not found');
+          err.clientStatus = 401;
+          throw err;
+        }
+        const token = crypto.randomBytes(40).toString('hex');
+        const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
+        await tx.refreshToken.create({ data: { token, userId: u.id, expiresAt } });
+        return { user: u, newRefreshToken: token };
+      }));
+    } catch (txErr) {
+      if (txErr.clientStatus) return res.status(txErr.clientStatus).json({ error: txErr.message });
+      throw txErr;
+    }
 
     const newJwt = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, { expiresIn: jwtExpiresIn });
-    const newRefreshToken = await createRefreshToken(user.id);
     setRefreshCookie(res, newRefreshToken);
     res.json({ token: newJwt });
   } catch (err) {
@@ -190,7 +212,7 @@ async function logout(req, res, next) {
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
       path: '/',
     });
     res.json({ message: 'Logged out' });

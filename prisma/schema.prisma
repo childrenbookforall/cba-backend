@@ -45,8 +45,9 @@ model User {
   bio          String?
   birthday     DateTime?
   avatarUrl    String?
-  role         Role     @default(member)
-  isActive     Boolean  @default(true)
+  role                Role     @default(member)
+  isActive            Boolean  @default(true)
+  canInitiateMessages Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -63,6 +64,10 @@ model User {
   refreshTokens       RefreshToken[]
   mentions            Mention[]
   dailyActivities     UserDailyActivity[]
+  bookmarks           Bookmark[]
+  conversationsAsA    Conversation[] @relation("ConversationUserA")
+  conversationsAsB    Conversation[] @relation("ConversationUserB")
+  messagesSent        Message[]      @relation("MessageSender")
 }
 
 model InviteToken {
@@ -133,6 +138,7 @@ model Post {
   notifications Notification[]
   flags         Flag[]
   mentions      Mention[]
+  bookmarks     Bookmark[]
 
   @@index([groupId])
   @@index([userId])
@@ -171,6 +177,50 @@ model Reaction {
   createdAt DateTime     @default(now())
 
   @@unique([postId, userId])
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+model Conversation {
+  id        String    @id @default(uuid())
+  userA     User      @relation("ConversationUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userAId   String
+  userB     User      @relation("ConversationUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  userBId   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  messages  Message[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId       String
+  content        String
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([conversationId, senderId, isRead])
 }
 
 model Notification {

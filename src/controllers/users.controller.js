@@ -14,6 +14,7 @@ async function getMe(req, res, next) {
         birthday: true,
         avatarUrl: true,
         role: true,
+        canInitiateMessages: true,
         createdAt: true,
       },
     });
@@ -44,6 +45,7 @@ async function updateMe(req, res, next) {
         birthday: true,
         avatarUrl: true,
         role: true,
+        canInitiateMessages: true,
         createdAt: true,
       },
     });
@@ -79,6 +81,7 @@ async function uploadAvatar(req, res, next) {
         birthday: true,
         avatarUrl: true,
         role: true,
+        canInitiateMessages: true,
         createdAt: true,
       },
     });

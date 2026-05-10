@@ -21,4 +21,17 @@ async function sendPasswordResetEmail(toEmail, resetUrl) {
   });
 }
 
-module.exports = { sendInviteEmail, sendPasswordResetEmail };
+async function sendDirectMessageEmail(toEmail, senderName, messagePreview, inboxUrl) {
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: toEmail,
+      subject: `${senderName} sent you a message`,
+      text: `${senderName} sent you a message:\n\n"${messagePreview}"\n\nReply here: ${inboxUrl}`,
+    });
+  } catch (err) {
+    console.error('Failed to send direct message email:', err);
+  }
+}
+
+module.exports = { sendInviteEmail, sendPasswordResetEmail, sendDirectMessageEmail };

@@ -30,11 +30,12 @@ const POST_INCLUDE = (userId) => ({
   group: { select: { id: true, name: true, slug: true } },
   reactions: { select: { type: true, userId: true } },
   flags: { where: { flaggedById: userId }, select: { id: true } },
+  bookmarks: { where: { userId }, select: { id: true } },
   _count: { select: { comments: true, reactions: true } },
 });
 
-function formatPost({ reactions, flags, ...post }, userId) {
-  return { ...post, ...flattenReactions(reactions, userId), flaggedByMe: flags.length > 0 };
+function formatPost({ reactions, flags, bookmarks, ...post }, userId) {
+  return { ...post, ...flattenReactions(reactions, userId), flaggedByMe: flags.length > 0, isBookmarked: bookmarks.length > 0 };
 }
 
 async function getTopFeed(filterGroupIds, userId, page) {
@@ -113,7 +114,7 @@ async function getFeed(req, res, next) {
     const cursor = req.query.cursor;
 
     const posts = await prisma.post.findMany({
-      where: { groupId: { in: filterGroupIds } },
+      where: { groupId: { in: filterGroupIds }, isPinned: false },
       include: POST_INCLUDE(req.user.userId),
       orderBy: { createdAt: 'desc' },
       take: FEED_LIMIT,
@@ -353,6 +354,7 @@ async function searchPosts(req, res, next) {
   try {
     const q = (req.query.q || '').trim()
     if (!q) return res.json({ posts: [] })
+    if (q.length > 200) return res.status(400).json({ error: 'Search query too long' })
 
     const groupIds = await getUserGroupIds(req.user.userId)
     if (groupIds.length === 0) return res.json({ posts: [] })

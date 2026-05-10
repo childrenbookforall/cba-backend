@@ -36,6 +36,14 @@ async function removeReaction(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
+    const membership = await prisma.groupMember.findUnique({
+      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
+    });
+
+    if (!membership) {
+      return res.status(403).json({ error: 'You are not a member of this group' });
+    }
+
     await prisma.reaction.delete({
       where: { postId_userId: { postId: post.id, userId: req.user.userId } },
     });

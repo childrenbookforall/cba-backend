@@ -11,6 +11,7 @@ const {
   listFlags, reviewFlag,
   pushBroadcast,
   getSiteNotification, upsertSiteNotification, toggleSiteNotification,
+  listAllConversations, getConversationThread,
 } = require('../controllers/admin.controller');
 
 router.use(authMiddleware, adminMiddleware);
@@ -81,5 +82,9 @@ router.put('/site-notification', [
   body('isActive').optional().isBoolean(),
 ], validateMiddleware, upsertSiteNotification);
 router.patch('/site-notification/toggle', toggleSiteNotification);
+
+// Messages audit
+router.get('/messages', listAllConversations);
+router.get('/messages/:userId1/:userId2', getConversationThread);
 
 module.exports = router;

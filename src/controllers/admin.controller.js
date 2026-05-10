@@ -3,6 +3,7 @@ const prisma = require('../prisma/client');
 const { sendInviteEmail } = require('../services/email.service');
 const { deleteMedia } = require('../services/upload.service');
 const { frontendUrl } = require('../config/env');
+const { canonicalPair } = require('../lib/messages');
 const { sendPush } = require('../services/push.service');
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -421,6 +422,15 @@ async function reviewFlag(req, res, next) {
       return res.status(404).json({ error: 'Flag not found' });
     }
 
+    // Check if any other unreviewed flags exist for the same content
+    const otherFlagCount = await prisma.flag.count({
+      where: {
+        id: { not: req.params.flagId },
+        reviewedAt: null,
+        ...(flag.contentType === 'post' ? { postId: flag.postId } : { commentId: flag.commentId }),
+      },
+    });
+
     const ops = [
       prisma.flag.update({
         where: { id: req.params.flagId },
@@ -428,15 +438,17 @@ async function reviewFlag(req, res, next) {
       }),
     ];
 
-    // Clear isFlagged on the flagged content
-    if (flag.contentType === 'post' && flag.postId) {
-      ops.push(
-        prisma.post.update({ where: { id: flag.postId }, data: { isFlagged: false } })
-      );
-    } else if (flag.contentType === 'comment' && flag.commentId) {
-      ops.push(
-        prisma.comment.update({ where: { id: flag.commentId }, data: { isFlagged: false } })
-      );
+    // Only clear isFlagged when this is the last unreviewed flag on the content
+    if (otherFlagCount === 0) {
+      if (flag.contentType === 'post' && flag.postId) {
+        ops.push(
+          prisma.post.update({ where: { id: flag.postId }, data: { isFlagged: false } })
+        );
+      } else if (flag.contentType === 'comment' && flag.commentId) {
+        ops.push(
+          prisma.comment.update({ where: { id: flag.commentId }, data: { isFlagged: false } })
+        );
+      }
     }
 
     const [updated] = await prisma.$transaction(ops);
@@ -479,11 +491,12 @@ async function pushBroadcast(req, res, next) {
 
     await Promise.all(
       subscriptions.map(async (sub) => {
-        const ok = await sendPush(sub, payload);
-        if (ok) {
-          sent++;
-        } else {
-          expired.push(sub.id);
+        try {
+          const ok = await sendPush(sub, payload);
+          if (ok) sent++;
+          else expired.push(sub.id);
+        } catch {
+          // Non-expiry delivery error — skip this subscription, don't abort the broadcast
         }
       })
     );
@@ -548,6 +561,109 @@ async function toggleSiteNotification(req, res, next) {
   }
 }
 
+const ADMIN_MSG_PAGE = 20;
+const ADMIN_THREAD_PAGE = 50;
+
+async function listAllConversations(req, res, next) {
+  try {
+    const q = (req.query.q || '').trim();
+    const cursor = req.query.cursor;
+
+    let userIdFilter;
+    if (q) {
+      const matchedUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            { firstName: { startsWith: q, mode: 'insensitive' } },
+            { lastName: { startsWith: q, mode: 'insensitive' } },
+            { email: { startsWith: q, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+        take: 100,
+      });
+      const ids = matchedUsers.map((u) => u.id);
+      if (ids.length === 0) return res.json({ conversations: [], hasMore: false, nextCursor: null });
+      userIdFilter = { OR: [{ userAId: { in: ids } }, { userBId: { in: ids } }] };
+    }
+
+    const conversations = await prisma.conversation.findMany({
+      where: userIdFilter ?? {},
+      orderBy: { updatedAt: 'desc' },
+      take: ADMIN_MSG_PAGE + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      include: {
+        userA: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        userB: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, content: true, senderId: true, createdAt: true } },
+        _count: { select: { messages: true } },
+      },
+    });
+
+    const hasMore = conversations.length > ADMIN_MSG_PAGE;
+    if (hasMore) conversations.pop();
+
+    res.json({
+      conversations: conversations.map((c) => ({
+        id: c.id,
+        userA: c.userA,
+        userB: c.userB,
+        lastMessage: c.messages[0] ?? null,
+        messageCount: c._count.messages,
+        updatedAt: c.updatedAt,
+      })),
+      hasMore,
+      nextCursor: hasMore ? conversations[conversations.length - 1].id : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getConversationThread(req, res, next) {
+  try {
+    if (req.params.userId1 === req.params.userId2) {
+      return res.status(400).json({ error: 'User IDs must be different' });
+    }
+    const pair = canonicalPair(req.params.userId1, req.params.userId2);
+    const conversation = await prisma.conversation.findUnique({
+      where: { userAId_userBId: pair },
+      include: {
+        userA: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        userB: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+      },
+    });
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+
+    const cursor = req.query.cursor;
+    const messages = await prisma.message.findMany({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: 'asc' },
+      take: ADMIN_THREAD_PAGE + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      include: {
+        sender: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+      },
+    });
+
+    const hasMore = messages.length > ADMIN_THREAD_PAGE;
+    if (hasMore) messages.pop();
+
+    res.json({
+      conversation: {
+        id: conversation.id,
+        userA: conversation.userA,
+        userB: conversation.userB,
+      },
+      messages,
+      hasMore,
+      nextCursor: hasMore ? messages[messages.length - 1].id : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
   listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
@@ -555,4 +671,5 @@ module.exports = {
   listFlags, reviewFlag,
   pushBroadcast,
   getSiteNotification, upsertSiteNotification, toggleSiteNotification,
+  listAllConversations, getConversationThread,
 };
