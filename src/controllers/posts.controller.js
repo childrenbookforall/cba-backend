@@ -359,20 +359,41 @@ async function searchPosts(req, res, next) {
     const groupIds = await getUserGroupIds(req.user.userId)
     if (groupIds.length === 0) return res.json({ posts: [] })
 
+    const isAuthorSearch = q.startsWith('@')
+    const term = isAuthorSearch ? q.slice(1).trim() : q
+
+    if (!term) return res.json({ posts: [], nextCursor: null })
+
+    const cursor = req.query.cursor
+
+    const where = isAuthorSearch
+      ? {
+          groupId: { in: groupIds },
+          user: {
+            OR: [
+              { firstName: { contains: term, mode: 'insensitive' } },
+              { lastName: { contains: term, mode: 'insensitive' } },
+            ],
+          },
+        }
+      : {
+          groupId: { in: groupIds },
+          OR: [
+            { title: { contains: term, mode: 'insensitive' } },
+            { content: { contains: term, mode: 'insensitive' } },
+          ],
+        }
+
     const posts = await prisma.post.findMany({
-      where: {
-        groupId: { in: groupIds },
-        OR: [
-          { title: { contains: q, mode: 'insensitive' } },
-          { content: { contains: q, mode: 'insensitive' } },
-        ],
-      },
+      where,
       include: POST_INCLUDE(req.user.userId),
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: FEED_LIMIT,
+      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
     })
 
-    res.json({ posts: posts.map((p) => formatPost(p, req.user.userId)) })
+    const nextCursor = posts.length === FEED_LIMIT ? posts[posts.length - 1].id : null
+    res.json({ posts: posts.map((p) => formatPost(p, req.user.userId)), nextCursor })
   } catch (err) {
     next(err)
   }

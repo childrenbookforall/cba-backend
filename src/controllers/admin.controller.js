@@ -38,6 +38,11 @@ async function sendInvite(req, res, next) {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    await prisma.inviteToken.updateMany({
+      where: { email: user.email, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
