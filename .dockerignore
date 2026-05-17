@@ -3,3 +3,6 @@ node_modules
 .env.test
 tests
 .gitignore
+backup
+*.md
+.git

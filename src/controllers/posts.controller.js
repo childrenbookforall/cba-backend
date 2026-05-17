@@ -114,7 +114,7 @@ async function getFeed(req, res, next) {
     const cursor = req.query.cursor;
 
     const posts = await prisma.post.findMany({
-      where: { groupId: { in: filterGroupIds }, isPinned: false },
+      where: { groupId: { in: filterGroupIds } },
       include: POST_INCLUDE(req.user.userId),
       orderBy: { createdAt: 'desc' },
       take: FEED_LIMIT,
