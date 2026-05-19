@@ -69,9 +69,20 @@ const ADMIN_LIST_LIMIT = 20;
 
 async function listUsers(req, res, next) {
   try {
-    const cursor = req.query.cursor;
+    const { cursor, search } = req.query;
+
+    const where = search
+      ? {
+          OR: [
+            { firstName: { contains: search, mode: 'insensitive' } },
+            { lastName: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+      : undefined;
 
     const rawUsers = await prisma.user.findMany({
+      where,
       select: {
         id: true,
         firstName: true,
