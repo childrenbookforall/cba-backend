@@ -1,5 +1,6 @@
 const prisma = require('../prisma/client');
 const { uploadMedia, deleteMedia } = require('../services/upload.service');
+const { getAccessibleGroup } = require('../lib/groupAccess');
 
 async function getMe(req, res, next) {
   try {
@@ -125,17 +126,20 @@ async function searchUsers(req, res, next) {
     let candidateIds;
 
     if (req.query.groupId) {
-      // Scope to a specific group — verify membership first
-      const membership = await prisma.groupMember.findUnique({
-        where: { userId_groupId: { userId: req.user.userId, groupId: req.query.groupId } },
-      });
-      if (!membership) return res.status(403).json({ error: 'You are not a member of this group' });
+      // Scope to a specific group — verify access first
+      const group = await getAccessibleGroup(req.user.userId, req.query.groupId);
+      if (!group) return res.status(403).json({ error: 'You do not have access to this group' });
 
-      const members = await prisma.groupMember.findMany({
-        where: { groupId: req.query.groupId },
-        select: { userId: true },
-      });
-      candidateIds = members.map((m) => m.userId).filter((id) => id !== req.user.userId);
+      if (group.isPublic) {
+        // Public group — every active user is mentionable
+        candidateIds = null;
+      } else {
+        const members = await prisma.groupMember.findMany({
+          where: { groupId: req.query.groupId },
+          select: { userId: true },
+        });
+        candidateIds = members.map((m) => m.userId).filter((id) => id !== req.user.userId);
+      }
     } else {
       // Fall back to all users sharing any group with the requester
       const memberships = await prisma.groupMember.findMany({
@@ -153,11 +157,11 @@ async function searchUsers(req, res, next) {
       candidateIds = sharedMembers.map((m) => m.userId).filter((id) => id !== req.user.userId);
     }
 
-    if (candidateIds.length === 0) return res.json([]);
+    if (candidateIds !== null && candidateIds.length === 0) return res.json([]);
 
     const users = await prisma.user.findMany({
       where: {
-        id: { in: candidateIds },
+        id: candidateIds !== null ? { in: candidateIds } : { not: req.user.userId },
         isActive: true,
         OR: [
           { firstName: { startsWith: q, mode: 'insensitive' } },

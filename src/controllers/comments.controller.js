@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { canAccessGroup } = require('../lib/groupAccess');
 const { parseMentions, processMentions } = require('../services/mention.service');
 
 const MENTION_TOKEN_RE = /@\[([^\]]+)\]\([^)]+\)/g;
@@ -14,13 +15,8 @@ async function getComments(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    // Verify membership
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     // Fetch top-level comments with their replies nested
@@ -63,13 +59,8 @@ async function createComment(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    // Verify membership
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     const { content, parentId } = req.body;
@@ -183,12 +174,8 @@ async function updateComment(req, res, next) {
       return res.status(403).json({ error: 'You can only edit your own comments' });
     }
 
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: comment.post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, comment.post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     const { content } = req.body;
@@ -260,13 +247,8 @@ async function flagComment(req, res, next) {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    // Verify membership
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: comment.post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, comment.post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     await prisma.$transaction([

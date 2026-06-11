@@ -280,18 +280,80 @@ async function listGroupMembers(req, res, next) {
 
 async function createGroup(req, res, next) {
   try {
-    const { name, slug, description } = req.body;
+    const { name, slug, description, parentId, isPublic, isViewOnly } = req.body;
 
     const existing = await prisma.group.findUnique({ where: { slug } });
     if (existing) {
       return res.status(409).json({ error: 'A group with this slug already exists' });
     }
 
+    if (parentId) {
+      const parent = await prisma.group.findUnique({ where: { id: parentId }, select: { parentId: true } });
+      if (!parent) return res.status(404).json({ error: 'Parent group not found' });
+      if (parent.parentId) {
+        return res.status(400).json({ error: 'Cannot nest under a sub-group (two levels only)' });
+      }
+    }
+
     const group = await prisma.group.create({
-      data: { name, slug, description },
+      data: {
+        name,
+        slug,
+        description,
+        parentId: parentId || null,
+        isPublic: Boolean(isPublic),
+        isViewOnly: Boolean(isViewOnly),
+      },
     });
 
     res.status(201).json(group);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateGroup(req, res, next) {
+  try {
+    const { groupId } = req.params;
+    const group = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const { name, slug, description, parentId, isPublic, isViewOnly } = req.body;
+    const data = {};
+
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description || null;
+    if (isPublic !== undefined) data.isPublic = Boolean(isPublic);
+    if (isViewOnly !== undefined) data.isViewOnly = Boolean(isViewOnly);
+
+    if (slug !== undefined && slug !== group.slug) {
+      const existing = await prisma.group.findUnique({ where: { slug } });
+      if (existing) {
+        return res.status(409).json({ error: 'A group with this slug already exists' });
+      }
+      data.slug = slug;
+    }
+
+    if (parentId !== undefined) {
+      if (parentId) {
+        if (parentId === groupId) {
+          return res.status(400).json({ error: 'A group cannot be its own parent' });
+        }
+        const parent = await prisma.group.findUnique({ where: { id: parentId }, select: { parentId: true } });
+        if (!parent) return res.status(404).json({ error: 'Parent group not found' });
+        if (parent.parentId) {
+          return res.status(400).json({ error: 'Cannot nest under a sub-group (two levels only)' });
+        }
+        const childCount = await prisma.group.count({ where: { parentId: groupId } });
+        if (childCount > 0) {
+          return res.status(400).json({ error: 'A group with sub-groups cannot become a sub-group' });
+        }
+      }
+      data.parentId = parentId || null;
+    }
+
+    const updated = await prisma.group.update({ where: { id: groupId }, data });
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -305,6 +367,11 @@ async function addGroupMember(req, res, next) {
     const group = await prisma.group.findUnique({ where: { id: groupId } });
     if (!group) {
       return res.status(404).json({ error: 'Group not found' });
+    }
+
+    const childCount = await prisma.group.count({ where: { parentId: groupId } });
+    if (childCount > 0) {
+      return res.status(400).json({ error: 'Parent groups cannot have members' });
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -682,7 +749,7 @@ async function getConversationThread(req, res, next) {
 
 module.exports = {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
-  listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
+  listGroups, listGroupMembers, createGroup, updateGroup, deleteGroup, addGroupMember, removeGroupMember,
   togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,

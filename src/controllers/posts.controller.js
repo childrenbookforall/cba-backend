@@ -3,15 +3,7 @@ const prisma = require('../prisma/client');
 const { uploadMedia, deleteMedia } = require('../services/upload.service');
 const { fetchLinkPreview } = require('../services/linkPreview.service');
 const { parseMentions, processMentions } = require('../services/mention.service');
-
-// Internal helper — returns group IDs the given user belongs to
-async function getUserGroupIds(userId) {
-  const memberships = await prisma.groupMember.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  return memberships.map((m) => m.groupId);
-}
+const { getAccessibleGroup, canAccessGroup, getAccessibleGroupIds } = require('../lib/groupAccess');
 
 // Flatten reactions array into per-type counts and myReaction
 function flattenReactions(reactions, userId) {
@@ -87,17 +79,17 @@ async function getTopFeed(filterGroupIds, userId, page) {
 
 async function getFeed(req, res, next) {
   try {
-    const groupIds = await getUserGroupIds(req.user.userId);
+    const groupIds = await getAccessibleGroupIds(req.user.userId);
 
     if (groupIds.length === 0) {
       return res.json({ posts: [], nextCursor: null });
     }
 
-    // If groupId query param is provided, verify membership and filter to that group
+    // If groupId query param is provided, verify access and filter to that group
     let filterGroupIds = groupIds;
     if (req.query.groupId) {
       if (!groupIds.includes(req.query.groupId)) {
-        return res.status(403).json({ error: 'You are not a member of this group' });
+        return res.status(403).json({ error: 'You do not have access to this group' });
       }
       filterGroupIds = [req.query.groupId];
     }
@@ -140,13 +132,8 @@ async function getPost(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    // Verify the user is a member of the post's group
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     res.json(formatPost(post, req.user.userId));
@@ -174,13 +161,15 @@ async function createPost(req, res, next) {
       return res.status(400).json({ error: 'Content cannot exceed 10,000 characters' });
     }
 
-    // Verify membership
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    const group = await getAccessibleGroup(req.user.userId, groupId);
+    if (!group) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
+    }
+    if (group.hasChildren) {
+      return res.status(400).json({ error: 'Posts cannot be created in a parent group' });
+    }
+    if (group.isViewOnly && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can post in this group' });
     }
 
     let mediaUrl = null;
@@ -320,13 +309,8 @@ async function flagPost(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    // Verify membership
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     await prisma.$transaction([
@@ -356,7 +340,7 @@ async function searchPosts(req, res, next) {
     if (!q) return res.json({ posts: [] })
     if (q.length > 200) return res.status(400).json({ error: 'Search query too long' })
 
-    const groupIds = await getUserGroupIds(req.user.userId)
+    const groupIds = await getAccessibleGroupIds(req.user.userId)
     if (groupIds.length === 0) return res.json({ posts: [] })
 
     const isAuthorSearch = q.startsWith('@')

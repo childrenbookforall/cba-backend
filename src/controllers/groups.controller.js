@@ -1,22 +1,32 @@
 const prisma = require('../prisma/client');
+const { canAccessGroup } = require('../lib/groupAccess');
 
+const GROUP_SELECT = { id: true, name: true, slug: true, description: true, parentId: true, isPublic: true, isViewOnly: true };
+
+// Returns the groups the user can access, with children nested under parents.
+// A leaf group (no children) is included if the user is a member or it is public;
+// a parent group is included only when at least one of its children is.
 async function listMyGroups(req, res, next) {
   try {
-    const memberships = await prisma.groupMember.findMany({
-      where: { userId: req.user.userId },
-      include: {
-        group: {
-          select: { id: true, name: true, slug: true, description: true },
-        },
-      },
-    });
+    const [memberships, allGroups] = await Promise.all([
+      prisma.groupMember.findMany({
+        where: { userId: req.user.userId },
+        select: { groupId: true },
+      }),
+      prisma.group.findMany({ select: GROUP_SELECT, orderBy: { createdAt: 'asc' } }),
+    ]);
 
-    const groupIds = memberships.map((m) => m.group.id);
+    const memberGroupIds = new Set(memberships.map((m) => m.groupId));
+    const parentIds = new Set(allGroups.filter((g) => g.parentId).map((g) => g.parentId));
+
+    const visibleLeaves = allGroups.filter(
+      (g) => !parentIds.has(g.id) && (g.isPublic || memberGroupIds.has(g.id))
+    );
 
     // Count only members who have accepted their invite (passwordHash !== 'INVITE_PENDING')
     const memberCounts = await prisma.groupMember.findMany({
       where: {
-        groupId: { in: groupIds },
+        groupId: { in: visibleLeaves.map((g) => g.id) },
         user: { passwordHash: { not: 'INVITE_PENDING' }, role: 'member' },
       },
       select: { groupId: true },
@@ -27,12 +37,19 @@ async function listMyGroups(req, res, next) {
       return acc;
     }, {});
 
-    const groups = memberships.map((m) => ({
-      ...m.group,
-      _count: { members: countByGroup[m.group.id] ?? 0 },
-    }));
+    const withCount = (g) => ({ ...g, _count: { members: countByGroup[g.id] ?? 0 } });
 
-    res.json(groups);
+    const result = [];
+    for (const g of allGroups) {
+      if (parentIds.has(g.id)) {
+        const children = visibleLeaves.filter((c) => c.parentId === g.id).map(withCount);
+        if (children.length > 0) result.push({ ...g, children });
+      } else if (!g.parentId && (g.isPublic || memberGroupIds.has(g.id))) {
+        result.push(withCount(g));
+      }
+    }
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -40,19 +57,13 @@ async function listMyGroups(req, res, next) {
 
 async function getGroup(req, res, next) {
   try {
-    const membership = await prisma.groupMember.findUnique({
-      where: {
-        userId_groupId: { userId: req.user.userId, groupId: req.params.groupId },
-      },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, req.params.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     const group = await prisma.group.findUnique({
       where: { id: req.params.groupId },
-      select: { id: true, name: true, slug: true, description: true },
+      select: GROUP_SELECT,
     });
 
     res.json(group);
@@ -67,10 +78,9 @@ async function listGroupMembers(req, res, next) {
     const { cursor, search } = req.query;
     const take = 30;
 
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId } },
-    });
-    if (!membership) return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
+    }
 
     const where = {
       groupId,

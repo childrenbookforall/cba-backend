@@ -1,4 +1,5 @@
 const prisma = require('../prisma/client');
+const { canAccessGroup } = require('../lib/groupAccess');
 
 async function upsertReaction(req, res, next) {
   try {
@@ -8,12 +9,8 @@ async function upsertReaction(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     const reaction = await prisma.reaction.upsert({
@@ -36,12 +33,8 @@ async function removeReaction(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     await prisma.reaction.delete({
@@ -65,12 +58,8 @@ async function getReactors(req, res, next) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
-    const membership = await prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: req.user.userId, groupId: post.groupId } },
-    });
-
-    if (!membership) {
-      return res.status(403).json({ error: 'You are not a member of this group' });
+    if (!(await canAccessGroup(req.user.userId, post.groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
     const userSelect = { select: { id: true, firstName: true, lastName: true, avatarUrl: true } };

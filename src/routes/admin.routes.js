@@ -6,7 +6,7 @@ const adminMiddleware = require('../middleware/admin.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
 const {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
-  listGroups, listGroupMembers, createGroup, deleteGroup, addGroupMember, removeGroupMember,
+  listGroups, listGroupMembers, createGroup, updateGroup, deleteGroup, addGroupMember, removeGroupMember,
   togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
@@ -32,11 +32,24 @@ router.delete('/users/:userId', deleteUser);
 router.get('/groups', listGroups);
 router.get('/groups/:groupId/members', listGroupMembers);
 
+const groupFieldValidators = [
+  body('description').optional({ nullable: true }).isString().trim(),
+  body('parentId').optional({ nullable: true }).isUUID().withMessage('parentId must be a valid group ID'),
+  body('isPublic').optional().isBoolean().withMessage('isPublic must be a boolean'),
+  body('isViewOnly').optional().isBoolean().withMessage('isViewOnly must be a boolean'),
+];
+
 router.post('/groups', [
   body('name').notEmpty().withMessage('Group name is required'),
   body('slug').notEmpty().matches(/^[a-z0-9-]+$/).withMessage('Slug must be lowercase letters, numbers and hyphens only'),
-  body('description').optional().isString().trim(),
+  ...groupFieldValidators,
 ], validateMiddleware, createGroup);
+
+router.patch('/groups/:groupId', [
+  body('name').optional().notEmpty().withMessage('Group name cannot be empty'),
+  body('slug').optional().matches(/^[a-z0-9-]+$/).withMessage('Slug must be lowercase letters, numbers and hyphens only'),
+  ...groupFieldValidators,
+], validateMiddleware, updateGroup);
 
 router.post('/groups/:groupId/members', [
   body('userId').notEmpty().withMessage('User ID is required'),

@@ -95,10 +95,17 @@ model Group {
   name        String
   slug        String   @unique
   description String?
+  parentId    String?
+  isPublic    Boolean  @default(false)
+  isViewOnly  Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  members GroupMember[]
-  posts   Post[]
+  parent   Group?  @relation("GroupChildren", fields: [parentId], references: [id])
+  children Group[] @relation("GroupChildren")
+  members  GroupMember[]
+  posts    Post[]
+
+  @@index([parentId])
 }
 
 model GroupMember {
