@@ -278,6 +278,39 @@ async function listGroupMembers(req, res, next) {
   }
 }
 
+// Validates assigning parentId as a parent group. Parents are display-only:
+// they must not be sub-groups themselves and must hold no members or posts.
+// Returns { status, error } when invalid, null when OK.
+// groupId is the group being edited (update only), to block self/child cycles.
+async function validateParentAssignment(parentId, groupId = null) {
+  if (groupId && parentId === groupId) {
+    return { status: 400, error: 'A group cannot be its own parent' };
+  }
+
+  const parent = await prisma.group.findUnique({ where: { id: parentId }, select: { parentId: true } });
+  if (!parent) return { status: 404, error: 'Parent group not found' };
+  if (parent.parentId) {
+    return { status: 400, error: 'Cannot nest under a sub-group (two levels only)' };
+  }
+
+  const [memberCount, postCount] = await Promise.all([
+    prisma.groupMember.count({ where: { groupId: parentId } }),
+    prisma.post.count({ where: { groupId: parentId } }),
+  ]);
+  if (memberCount > 0 || postCount > 0) {
+    return { status: 400, error: 'Parent groups are display-only — the selected parent already has members or posts' };
+  }
+
+  if (groupId) {
+    const childCount = await prisma.group.count({ where: { parentId: groupId } });
+    if (childCount > 0) {
+      return { status: 400, error: 'A group with sub-groups cannot become a sub-group' };
+    }
+  }
+
+  return null;
+}
+
 async function createGroup(req, res, next) {
   try {
     const { name, slug, description, parentId, isPublic, isViewOnly } = req.body;
@@ -288,11 +321,8 @@ async function createGroup(req, res, next) {
     }
 
     if (parentId) {
-      const parent = await prisma.group.findUnique({ where: { id: parentId }, select: { parentId: true } });
-      if (!parent) return res.status(404).json({ error: 'Parent group not found' });
-      if (parent.parentId) {
-        return res.status(400).json({ error: 'Cannot nest under a sub-group (two levels only)' });
-      }
+      const invalid = await validateParentAssignment(parentId);
+      if (invalid) return res.status(invalid.status).json({ error: invalid.error });
     }
 
     const group = await prisma.group.create({
@@ -336,18 +366,8 @@ async function updateGroup(req, res, next) {
 
     if (parentId !== undefined) {
       if (parentId) {
-        if (parentId === groupId) {
-          return res.status(400).json({ error: 'A group cannot be its own parent' });
-        }
-        const parent = await prisma.group.findUnique({ where: { id: parentId }, select: { parentId: true } });
-        if (!parent) return res.status(404).json({ error: 'Parent group not found' });
-        if (parent.parentId) {
-          return res.status(400).json({ error: 'Cannot nest under a sub-group (two levels only)' });
-        }
-        const childCount = await prisma.group.count({ where: { parentId: groupId } });
-        if (childCount > 0) {
-          return res.status(400).json({ error: 'A group with sub-groups cannot become a sub-group' });
-        }
+        const invalid = await validateParentAssignment(parentId, groupId);
+        if (invalid) return res.status(invalid.status).json({ error: invalid.error });
       }
       data.parentId = parentId || null;
     }
@@ -553,13 +573,20 @@ async function pushBroadcast(req, res, next) {
     if (target === 'all') {
       subscriptions = await prisma.pushSubscription.findMany();
     } else if (target === 'groups') {
-      subscriptions = await prisma.pushSubscription.findMany({
-        where: {
-          user: {
-            groupMemberships: { some: { groupId: { in: groupIds } } },
-          },
-        },
+      // Public groups have no membership rows but are visible to every user,
+      // so a broadcast targeting one reaches everyone with a subscription
+      const publicCount = await prisma.group.count({
+        where: { id: { in: groupIds }, isPublic: true },
       });
+      subscriptions = publicCount > 0
+        ? await prisma.pushSubscription.findMany()
+        : await prisma.pushSubscription.findMany({
+            where: {
+              user: {
+                groupMemberships: { some: { groupId: { in: groupIds } } },
+              },
+            },
+          });
     } else if (target === 'emails') {
       subscriptions = await prisma.pushSubscription.findMany({
         where: { user: { email: { in: emails } } },

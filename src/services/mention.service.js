@@ -24,16 +24,23 @@ async function processMentions({ actorId, mentionedUserIds, post, comment = null
 
   const commentId = comment?.id ?? null;
 
-  // Only process mentions for users who are actually members of the post's group.
+  // Only process mentions for users who can access the post's group.
   // Prevents notifications pointing to content the recipient can't access.
+  // Public groups are accessible to every user, so all mentions are eligible there.
   let eligibleIds = mentionedUserIds;
   if (post.groupId) {
-    const members = await prisma.groupMember.findMany({
-      where: { groupId: post.groupId, userId: { in: mentionedUserIds } },
-      select: { userId: true },
+    const group = await prisma.group.findUnique({
+      where: { id: post.groupId },
+      select: { isPublic: true },
     });
-    const memberSet = new Set(members.map((m) => m.userId));
-    eligibleIds = mentionedUserIds.filter((id) => memberSet.has(id));
+    if (!group?.isPublic) {
+      const members = await prisma.groupMember.findMany({
+        where: { groupId: post.groupId, userId: { in: mentionedUserIds } },
+        select: { userId: true },
+      });
+      const memberSet = new Set(members.map((m) => m.userId));
+      eligibleIds = mentionedUserIds.filter((id) => memberSet.has(id));
+    }
   }
 
   if (eligibleIds.length === 0) return;

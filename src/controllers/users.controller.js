@@ -141,20 +141,26 @@ async function searchUsers(req, res, next) {
         candidateIds = members.map((m) => m.userId).filter((id) => id !== req.user.userId);
       }
     } else {
-      // Fall back to all users sharing any group with the requester
-      const memberships = await prisma.groupMember.findMany({
-        where: { userId: req.user.userId },
-        select: { groupId: true },
-      });
-      const groupIds = memberships.map((m) => m.groupId);
-      if (groupIds.length === 0) return res.json([]);
+      // Every user shares the public groups, so if any exist all active users are searchable
+      const publicCount = await prisma.group.count({ where: { isPublic: true } });
+      if (publicCount > 0) {
+        candidateIds = null;
+      } else {
+        // Fall back to all users sharing any group with the requester
+        const memberships = await prisma.groupMember.findMany({
+          where: { userId: req.user.userId },
+          select: { groupId: true },
+        });
+        const groupIds = memberships.map((m) => m.groupId);
+        if (groupIds.length === 0) return res.json([]);
 
-      const sharedMembers = await prisma.groupMember.findMany({
-        where: { groupId: { in: groupIds } },
-        select: { userId: true },
-        distinct: ['userId'],
-      });
-      candidateIds = sharedMembers.map((m) => m.userId).filter((id) => id !== req.user.userId);
+        const sharedMembers = await prisma.groupMember.findMany({
+          where: { groupId: { in: groupIds } },
+          select: { userId: true },
+          distinct: ['userId'],
+        });
+        candidateIds = sharedMembers.map((m) => m.userId).filter((id) => id !== req.user.userId);
+      }
     }
 
     if (candidateIds !== null && candidateIds.length === 0) return res.json([]);
