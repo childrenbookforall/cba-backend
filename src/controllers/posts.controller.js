@@ -16,6 +16,7 @@ function flattenReactions(reactions, userId) {
 }
 
 const FEED_LIMIT = 20;
+const MAX_TOP_FEED_PAGE = 500;
 
 const POST_INCLUDE = (userId) => ({
   user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
@@ -96,7 +97,10 @@ async function getFeed(req, res, next) {
 
     // Top feed — ranked by time-decayed reaction score, page-based pagination
     if (req.query.sort === 'top') {
-      const page = Math.max(1, parseInt(req.query.page) || 1);
+      // Cap page to bound the OFFSET into the ranking scan/sort. 500 * 20 = 10k
+      // posts deep, far past any real scrolling session; prevents large-offset
+      // resource exhaustion on this unindexable, scored-live query. (#6)
+      const page = Math.min(MAX_TOP_FEED_PAGE, Math.max(1, parseInt(req.query.page) || 1));
       const { pinnedPosts, posts } = await getTopFeed(filterGroupIds, req.user.userId, page);
       const hasMore = posts.length === FEED_LIMIT;
       return res.json({ pinnedPosts, posts, page, hasMore });
