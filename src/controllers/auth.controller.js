@@ -117,6 +117,7 @@ async function acceptInvite(req, res, next) {
 
     const token = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, {
       expiresIn: jwtExpiresIn,
+      algorithm: 'HS256',
     });
 
     const refreshToken = await createRefreshToken(user.id);
@@ -149,6 +150,7 @@ async function login(req, res, next) {
 
     const token = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, {
       expiresIn: jwtExpiresIn,
+      algorithm: 'HS256',
     });
 
     const refreshToken = await createRefreshToken(user.id);
@@ -201,7 +203,7 @@ async function refresh(req, res, next) {
       throw txErr;
     }
 
-    const newJwt = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, { expiresIn: jwtExpiresIn });
+    const newJwt = jwt.sign({ userId: user.id, role: user.role }, jwtSecret, { expiresIn: jwtExpiresIn, algorithm: 'HS256' });
     setRefreshCookie(res, newRefreshToken);
     res.json({ token: newJwt });
   } catch (err) {

@@ -36,8 +36,8 @@ router.post('/forgot-password', authLimiter, [
   body('email').isEmail().withMessage('Valid email is required'),
 ], validateMiddleware, forgotPassword);
 
-router.post('/refresh', refresh);
-router.post('/logout', logout);
+router.post('/refresh', authLimiter, refresh);
+router.post('/logout', authLimiter, logout);
 
 router.get('/reset-password/:token', authLimiter, validateResetToken);
 router.post('/reset-password/:token', authLimiter, passwordValidation, validateMiddleware, resetPassword);

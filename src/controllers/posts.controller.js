@@ -121,6 +121,9 @@ async function getFeed(req, res, next) {
 
     res.json({ posts: posts.map((p) => formatPost(p, req.user.userId)), nextCursor });
   } catch (err) {
+    // A well-formed but stale cursor (anchor row deleted between page loads)
+    // makes Prisma throw P2025; degrade to an empty page instead of 500. (#11)
+    if (err.code === 'P2025') return res.json({ posts: [], nextCursor: null });
     next(err);
   }
 }

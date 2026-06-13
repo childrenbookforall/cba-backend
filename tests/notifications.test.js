@@ -150,4 +150,57 @@ describe('Notifications API', () => {
       expect(res.status).toBe(401);
     });
   });
+
+  // ─── POST/DELETE /api/notifications/subscribe ───────────────────────────────
+
+  describe('Push subscription validation', () => {
+    const validSub = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+      keys: { p256dh: 'BPk-base64url-public-key', auth: 'auth-secret-token' },
+    };
+
+    afterEach(async () => {
+      await prisma.pushSubscription.deleteMany({ where: { userId: postAuthor.id } });
+    });
+
+    test('201 for a well-formed subscription', async () => {
+      const res = await request(app)
+        .post('/api/notifications/subscribe')
+        .set(authHeader(postAuthorToken))
+        .send(validSub);
+      expect(res.status).toBe(201);
+    });
+
+    test('400 when endpoint is not an https URL', async () => {
+      const res = await request(app)
+        .post('/api/notifications/subscribe')
+        .set(authHeader(postAuthorToken))
+        .send({ ...validSub, endpoint: 'http://insecure.example.com/x' });
+      expect(res.status).toBe(400);
+    });
+
+    test('400 when endpoint is an object instead of a string', async () => {
+      const res = await request(app)
+        .post('/api/notifications/subscribe')
+        .set(authHeader(postAuthorToken))
+        .send({ ...validSub, endpoint: { nested: 1 } });
+      expect(res.status).toBe(400);
+    });
+
+    test('400 when keys.p256dh is missing', async () => {
+      const res = await request(app)
+        .post('/api/notifications/subscribe')
+        .set(authHeader(postAuthorToken))
+        .send({ endpoint: validSub.endpoint, keys: { auth: 'auth-secret-token' } });
+      expect(res.status).toBe(400);
+    });
+
+    test('400 when unsubscribe endpoint is malformed', async () => {
+      const res = await request(app)
+        .delete('/api/notifications/subscribe')
+        .set(authHeader(postAuthorToken))
+        .send({ endpoint: 'not-a-url' });
+      expect(res.status).toBe(400);
+    });
+  });
 });

@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const authMiddleware = require('../middleware/auth.middleware');
 const adminMiddleware = require('../middleware/admin.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
+const validateCursor = require('../middleware/validateCursor');
 const {
   createUser, sendInvite, listUsers, suspendUser, deleteUser,
   listGroups, listGroupMembers, createGroup, updateGroup, deleteGroup, addGroupMember, removeGroupMember,
@@ -15,6 +16,7 @@ const {
 } = require('../controllers/admin.controller');
 
 router.use(authMiddleware, adminMiddleware);
+router.use(validateCursor);
 
 // Users
 router.post('/users', [

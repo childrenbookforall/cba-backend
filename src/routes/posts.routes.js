@@ -4,6 +4,7 @@ const { body } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const authMiddleware = require('../middleware/auth.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
+const validateCursor = require('../middleware/validateCursor');
 
 const createPostLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -29,13 +30,26 @@ const mediaUpload = multer({
   },
 });
 
+// multer's fileSize limit is per-file; cap the aggregate to bound in-memory
+// buffering (memoryStorage) per request. 50MB comfortably fits 10 typical
+// phone photos while halving the ~100MB worst case. (#8)
+const MAX_TOTAL_UPLOAD_BYTES = 50 * 1024 * 1024;
+function enforceTotalUploadSize(req, res, next) {
+  const total = (req.files || []).reduce((sum, file) => sum + file.size, 0);
+  if (total > MAX_TOTAL_UPLOAD_BYTES) {
+    return res.status(400).json({ error: 'Total upload size cannot exceed 50MB' });
+  }
+  next();
+}
+
 router.use(authMiddleware);
+router.use(validateCursor);
 
 router.get('/', getFeed);
 router.get('/search', searchPosts);
 router.get('/:postId', getPost);
 
-router.post('/', createPostLimiter, mediaUpload.array('media', 10), [
+router.post('/', createPostLimiter, mediaUpload.array('media', 10), enforceTotalUploadSize, [
   body('groupId').notEmpty().withMessage('Group ID is required'),
   body('type').isIn(['text', 'link', 'photo']).withMessage('Invalid post type'),
   body('title').notEmpty().isLength({ max: 200 }).withMessage('Title is required and cannot exceed 200 characters'),

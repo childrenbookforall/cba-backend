@@ -119,6 +119,22 @@ describe('Posts API', () => {
       const res = await request(app).get('/api/posts');
       expect(res.status).toBe(401);
     });
+
+    test('400 for a malformed (non-UUID) cursor', async () => {
+      const res = await request(app)
+        .get('/api/posts?cursor=not-a-uuid')
+        .set(authHeader(memberToken));
+      expect(res.status).toBe(400);
+    });
+
+    test('200 with an empty page for a well-formed but non-existent cursor', async () => {
+      const res = await request(app)
+        .get('/api/posts?cursor=00000000-0000-4000-8000-000000000000')
+        .set(authHeader(memberToken));
+      expect(res.status).toBe(200);
+      expect(res.body.posts).toEqual([]);
+      expect(res.body.nextCursor).toBeNull();
+    });
   });
 
   // ─── GET /api/posts/:postId ─────────────────────────────────────────────────

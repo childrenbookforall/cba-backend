@@ -131,11 +131,11 @@ describe('Comments API', () => {
       expect(res.status).toBe(400);
     });
 
-    test('400 when content exceeds 5000 characters', async () => {
+    test('400 when content exceeds 10,000 characters', async () => {
       const res = await request(app)
         .post(`/api/posts/${post.id}/comments`)
         .set(authHeader(member2Token))
-        .send({ content: 'a'.repeat(5001) });
+        .send({ content: 'a'.repeat(10001) });
       expect(res.status).toBe(400);
     });
 
@@ -204,11 +204,11 @@ describe('Comments API', () => {
       expect(res.status).toBe(403);
     });
 
-    test('400 when content exceeds 5000 characters', async () => {
+    test('400 when content exceeds 10,000 characters', async () => {
       const res = await request(app)
         .put(`/api/comments/${comment.id}`)
         .set(authHeader(authorToken))
-        .send({ content: 'a'.repeat(5001) });
+        .send({ content: 'a'.repeat(10001) });
       expect(res.status).toBe(400);
     });
 

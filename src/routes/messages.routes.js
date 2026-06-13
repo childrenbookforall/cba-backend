@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
 const authMiddleware = require('../middleware/auth.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
+const validateCursor = require('../middleware/validateCursor');
 const { getConversations, getConversation, sendMessage, markRead } = require('../controllers/messages.controller');
 
 const sendMessageLimiter = rateLimit({
@@ -17,6 +18,7 @@ const sendMessageLimiter = rateLimit({
 });
 
 router.use(authMiddleware);
+router.use(validateCursor);
 
 router.get('/messages', getConversations);
 router.get('/messages/:userId', getConversation);

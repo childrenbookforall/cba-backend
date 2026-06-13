@@ -3,6 +3,18 @@ const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.EMAIL_FROM;
 
+// Strip ASCII control characters (incl. CR/LF and DEL), collapse whitespace
+// runs and trim, then length-cap. Keeps user-controlled values (display name,
+// message preview) from injecting newlines/control chars into the email
+// subject or body. (#15)
+function sanitizeForEmail(value, maxLen = 200) {
+  return String(value ?? '')
+    .replace(/[\x00-\x1F\x7F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
 async function sendInviteEmail(toEmail, inviteUrl) {
   await resend.emails.send({
     from: FROM,
@@ -22,16 +34,18 @@ async function sendPasswordResetEmail(toEmail, resetUrl) {
 }
 
 async function sendDirectMessageEmail(toEmail, senderName, messagePreview, inboxUrl) {
+  const name = sanitizeForEmail(senderName, 100);
+  const preview = sanitizeForEmail(messagePreview, 300);
   try {
     await resend.emails.send({
       from: FROM,
       to: toEmail,
-      subject: `${senderName} sent you a message`,
-      text: `${senderName} sent you a message:\n\n"${messagePreview}"\n\nReply here: ${inboxUrl}`,
+      subject: `${name} sent you a message`,
+      text: `${name} sent you a message:\n\n"${preview}"\n\nReply here: ${inboxUrl}`,
     });
   } catch (err) {
     console.error('Failed to send direct message email:', err);
   }
 }
 
-module.exports = { sendInviteEmail, sendPasswordResetEmail, sendDirectMessageEmail };
+module.exports = { sendInviteEmail, sendPasswordResetEmail, sendDirectMessageEmail, sanitizeForEmail };

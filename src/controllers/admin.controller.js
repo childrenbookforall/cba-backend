@@ -71,6 +71,8 @@ async function listUsers(req, res, next) {
   try {
     const { cursor, search } = req.query;
 
+    if (search && search.length > 200) return res.status(400).json({ error: 'Search query too long' });
+
     const where = search
       ? {
           OR: [
@@ -234,6 +236,8 @@ async function listGroupMembers(req, res, next) {
     const { groupId } = req.params;
     const { cursor, search } = req.query;
     const take = 30;
+
+    if (search && search.length > 200) return res.status(400).json({ error: 'Search query too long' });
 
     const group = await prisma.group.findUnique({ where: { id: groupId } });
     if (!group) return res.status(404).json({ error: 'Group not found' });

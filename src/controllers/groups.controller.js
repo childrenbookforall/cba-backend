@@ -78,6 +78,8 @@ async function listGroupMembers(req, res, next) {
     const { cursor, search } = req.query;
     const take = 30;
 
+    if (search && search.length > 200) return res.status(400).json({ error: 'Search query too long' });
+
     if (!(await canAccessGroup(req.user.userId, groupId))) {
       return res.status(403).json({ error: 'You do not have access to this group' });
     }

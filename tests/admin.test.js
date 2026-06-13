@@ -344,8 +344,9 @@ describe('Admin API', () => {
         .get(`/api/admin/groups/${group.id}/members`)
         .set(authHeader(adminToken));
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      const m = res.body.find((u) => u.id === member.id);
+      expect(Array.isArray(res.body.members)).toBe(true);
+      expect(res.body).toHaveProperty('nextCursor');
+      const m = res.body.members.find((u) => u.id === member.id);
       expect(m).toBeDefined();
       expect(m).toHaveProperty('joinedAt');
     });
