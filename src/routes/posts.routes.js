@@ -51,6 +51,7 @@ router.post('/', createPostLimiter, mediaUpload.array('media', 10), [
 router.put('/:postId', [
   body('title').notEmpty().isLength({ max: 200 }).withMessage('Title is required and cannot exceed 200 characters'),
   body('content').optional().isString().isLength({ max: 11000 }).withMessage('Content cannot exceed 10,000 characters'),
+  body('linkUrl').optional({ values: 'falsy' }).isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid http/https URL is required for link posts'),
 ], validateMiddleware, updatePost);
 
 router.delete('/:postId', deletePost);

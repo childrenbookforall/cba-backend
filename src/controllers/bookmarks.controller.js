@@ -1,5 +1,5 @@
 const prisma = require('../prisma/client');
-const { canAccessGroup } = require('../lib/groupAccess');
+const { canAccessGroup, getAccessibleGroupIds } = require('../lib/groupAccess');
 
 const BOOKMARK_LIMIT = 20;
 
@@ -58,12 +58,21 @@ async function getSavedPosts(req, res, next) {
     const q = (req.query.q || '').trim();
     if (q.length > 200) return res.status(400).json({ error: 'Search query too long' });
 
-    const postFilter = q
+    // Only surface bookmarks in groups the user can still access. A bookmark made
+    // before the user was removed from a group must not keep returning that post's
+    // (possibly since-edited) content. See securityFindings.md #5.
+    const groupIds = await getAccessibleGroupIds(req.user.userId);
+    if (groupIds.length === 0) {
+      return res.json({ posts: [], nextCursor: null, hasMore: false });
+    }
+
+    const searchFilter = q
       ? { OR: [{ title: { contains: q, mode: 'insensitive' } }, { content: { contains: q, mode: 'insensitive' } }] }
       : undefined;
+    const postFilter = { groupId: { in: groupIds }, ...searchFilter };
 
     const bookmarks = await prisma.bookmark.findMany({
-      where: { userId: req.user.userId, ...(postFilter && { post: postFilter }) },
+      where: { userId: req.user.userId, post: postFilter },
       include: {
         post: {
           include: {

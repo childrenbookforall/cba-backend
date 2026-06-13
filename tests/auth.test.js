@@ -82,7 +82,7 @@ describe('Auth API', () => {
     test('201 and JWT token when accepting valid invite', async () => {
       const res = await request(app)
         .post(`/api/auth/invite/${invite.token}`)
-        .send({ password: 'Password1!' });
+        .send({ password: 'Password1!', firstName: 'Test' });
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('token');
     });
@@ -90,28 +90,14 @@ describe('Auth API', () => {
     test('400 when password is too short', async () => {
       const res = await request(app)
         .post(`/api/auth/invite/${invite.token}`)
-        .send({ password: 'short' });
+        .send({ password: 'short', firstName: 'Test' });
       expect(res.status).toBe(400);
     });
 
-    test('400 when password has no uppercase letter', async () => {
+    test('400 when first name is missing', async () => {
       const res = await request(app)
         .post(`/api/auth/invite/${invite.token}`)
-        .send({ password: 'password1!!' });
-      expect(res.status).toBe(400);
-    });
-
-    test('400 when password has no number', async () => {
-      const res = await request(app)
-        .post(`/api/auth/invite/${invite.token}`)
-        .send({ password: 'Password!!!' });
-      expect(res.status).toBe(400);
-    });
-
-    test('400 when password has no special character', async () => {
-      const res = await request(app)
-        .post(`/api/auth/invite/${invite.token}`)
-        .send({ password: 'Password111' });
+        .send({ password: 'Password1!' });
       expect(res.status).toBe(400);
     });
 

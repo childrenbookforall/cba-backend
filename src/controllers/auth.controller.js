@@ -7,6 +7,11 @@ const { sendPasswordResetEmail } = require('../services/email.service');
 
 const REFRESH_TOKEN_EXPIRES_DAYS = 30;
 
+// A valid bcrypt hash (cost 12) used to spend equivalent time on the
+// user-not-found / pending-account paths, so login timing can't be used to
+// enumerate which emails belong to real, set-up accounts.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('password-enumeration-guard', 12);
+
 async function createRefreshToken(userId) {
   const token = crypto.randomBytes(40).toString('hex');
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
@@ -97,10 +102,13 @@ async function acceptInvite(req, res, next) {
           err.clientStatus = 400;
           throw err;
         }
-        return tx.user.update({
+        const updated = await tx.user.update({
           where: { email: invite.email },
           data: { passwordHash, ...nameUpdate },
         });
+        // Revoke any pre-existing sessions (e.g. re-invited account) before issuing new ones
+        await tx.refreshToken.deleteMany({ where: { userId: updated.id } });
+        return updated;
       });
     } catch (txErr) {
       if (txErr.clientStatus) return res.status(txErr.clientStatus).json({ error: txErr.message });
@@ -125,16 +133,17 @@ async function login(req, res, next) {
       where: { email: req.body.email },
     });
 
-    if (!user || !user.isActive) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+    // Only a fully set-up, active account can authenticate. For every other case
+    // we still run one bcrypt compare (against a dummy hash) and return the same
+    // generic error, so neither the response nor its timing reveals whether the
+    // email exists or is invite-pending.
+    const canLogin = user && user.isActive && user.passwordHash !== 'INVITE_PENDING';
+    const passwordMatch = await bcrypt.compare(
+      req.body.password,
+      canLogin ? user.passwordHash : DUMMY_PASSWORD_HASH,
+    );
 
-    if (user.passwordHash === 'INVITE_PENDING') {
-      return res.status(401).json({ error: 'Account setup is not complete. Please check your invite email.' });
-    }
-
-    const passwordMatch = await bcrypt.compare(req.body.password, user.passwordHash);
-    if (!passwordMatch) {
+    if (!canLogin || !passwordMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -301,10 +310,12 @@ async function resetPassword(req, res, next) {
           err.clientStatus = 400;
           throw err;
         }
-        await tx.user.update({
+        const user = await tx.user.update({
           where: { email: resetToken.email },
           data: { passwordHash },
         });
+        // Revoke all sessions: a stolen refresh token must not survive a password reset
+        await tx.refreshToken.deleteMany({ where: { userId: user.id } });
       });
     } catch (txErr) {
       if (txErr.clientStatus) return res.status(txErr.clientStatus).json({ error: txErr.message });
