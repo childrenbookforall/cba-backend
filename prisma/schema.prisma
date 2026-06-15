@@ -98,6 +98,7 @@ model Group {
   parentId    String?
   isPublic    Boolean  @default(false)
   isViewOnly  Boolean  @default(false)
+  order       Int      @default(0)
   createdAt   DateTime @default(now())
 
   parent   Group?  @relation("GroupChildren", fields: [parentId], references: [id])

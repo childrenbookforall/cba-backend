@@ -1,5 +1,6 @@
 const prisma = require('../prisma/client');
 const { canAccessGroup, getAccessibleGroupIds } = require('../lib/groupAccess');
+const { POST_INCLUDE, formatPost, batchReactionCounts } = require('./posts.controller');
 
 const BOOKMARK_LIMIT = 20;
 
@@ -73,18 +74,7 @@ async function getSavedPosts(req, res, next) {
 
     const bookmarks = await prisma.bookmark.findMany({
       where: { userId: req.user.userId, post: postFilter },
-      include: {
-        post: {
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
-            group: { select: { id: true, name: true, slug: true } },
-            reactions: { select: { type: true, userId: true } },
-            flags: { where: { flaggedById: req.user.userId }, select: { id: true } },
-            bookmarks: { where: { userId: req.user.userId }, select: { id: true } },
-            _count: { select: { comments: true, reactions: true } },
-          },
-        },
-      },
+      include: { post: { include: POST_INCLUDE(req.user.userId) } },
       orderBy: { createdAt: 'desc' },
       take: BOOKMARK_LIMIT,
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
@@ -92,19 +82,9 @@ async function getSavedPosts(req, res, next) {
 
     const nextCursor = bookmarks.length === BOOKMARK_LIMIT ? bookmarks[bookmarks.length - 1].id : null;
 
-    const posts = bookmarks.map(({ post }) => {
-      const { reactions, flags, bookmarks: bm, ...rest } = post;
-      const myReaction = reactions.find((r) => r.userId === req.user.userId)?.type || null;
-      return {
-        ...rest,
-        myReaction,
-        withYouCount: reactions.filter((r) => r.type === 'with_you').length,
-        helpedMeCount: reactions.filter((r) => r.type === 'helped_me').length,
-        hugCount: reactions.filter((r) => r.type === 'hug').length,
-        flaggedByMe: flags.length > 0,
-        isBookmarked: bm.length > 0,
-      };
-    });
+    const rawPosts = bookmarks.map((b) => b.post);
+    const counts = await batchReactionCounts(rawPosts.map((p) => p.id));
+    const posts = rawPosts.map((p) => formatPost(p, counts[p.id]));
 
     res.json({ posts, nextCursor, hasMore: nextCursor !== null });
   } catch (err) {

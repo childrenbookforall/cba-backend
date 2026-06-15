@@ -5,44 +5,62 @@ const { fetchLinkPreview } = require('../services/linkPreview.service');
 const { parseMentions, processMentions } = require('../services/mention.service');
 const { getAccessibleGroup, canAccessGroup, getAccessibleGroupIds } = require('../lib/groupAccess');
 
-// Flatten reactions array into per-type counts and myReaction
-function flattenReactions(reactions, userId) {
-  return {
-    myReaction: reactions.find((r) => r.userId === userId)?.type || null,
-    withYouCount: reactions.filter((r) => r.type === 'with_you').length,
-    helpedMeCount: reactions.filter((r) => r.type === 'helped_me').length,
-    hugCount: reactions.filter((r) => r.type === 'hug').length,
-  };
+// Fetches per-type reaction counts for a batch of posts in one query.
+// Returns a map of postId → { withYouCount, helpedMeCount, hugCount }.
+// Posts with no reactions are absent from the map; callers default to 0.
+async function batchReactionCounts(postIds) {
+  if (postIds.length === 0) return {};
+  const rows = await prisma.$queryRaw`
+    SELECT
+      "postId",
+      COUNT(*) FILTER (WHERE type = 'with_you')::int  AS "withYouCount",
+      COUNT(*) FILTER (WHERE type = 'helped_me')::int AS "helpedMeCount",
+      COUNT(*) FILTER (WHERE type = 'hug')::int        AS "hugCount"
+    FROM "Reaction"
+    WHERE "postId" IN (${Prisma.join(postIds)})
+    GROUP BY "postId"
+  `;
+  return Object.fromEntries(rows.map((r) => [r.postId, r]));
 }
 
 const FEED_LIMIT = 20;
 const MAX_TOP_FEED_PAGE = 500;
 
+// reactions is filtered to the current user only (0 or 1 row per post).
+// Per-type counts come from batchReactionCounts, not from this include.
 const POST_INCLUDE = (userId) => ({
   user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
   group: { select: { id: true, name: true, slug: true } },
-  reactions: { select: { type: true, userId: true } },
+  reactions: { where: { userId }, select: { type: true } },
   flags: { where: { flaggedById: userId }, select: { id: true } },
   bookmarks: { where: { userId }, select: { id: true } },
   _count: { select: { comments: true, reactions: true } },
 });
 
-function formatPost({ reactions, flags, bookmarks, ...post }, userId) {
-  return { ...post, ...flattenReactions(reactions, userId), flaggedByMe: flags.length > 0, isBookmarked: bookmarks.length > 0 };
+// counts is the entry from batchReactionCounts for this post (may be undefined for posts with no reactions).
+function formatPost({ reactions, flags, bookmarks, ...post }, counts) {
+  return {
+    ...post,
+    myReaction: reactions[0]?.type ?? null,
+    withYouCount: counts?.withYouCount ?? 0,
+    helpedMeCount: counts?.helpedMeCount ?? 0,
+    hugCount: counts?.hugCount ?? 0,
+    flaggedByMe: flags.length > 0,
+    isBookmarked: bookmarks.length > 0,
+  };
 }
 
 async function getTopFeed(filterGroupIds, userId, page) {
   const offset = (page - 1) * FEED_LIMIT;
 
-  // Fetch pinned posts for this group (only on page 1, ordered by pinnedAt desc)
-  let pinnedPosts = [];
+  // Fetch pinned posts on page 1 only
+  let pinnedRaw = [];
   if (page === 1) {
-    const pinned = await prisma.post.findMany({
+    pinnedRaw = await prisma.post.findMany({
       where: { groupId: { in: filterGroupIds }, isPinned: true },
       include: POST_INCLUDE(userId),
       orderBy: { pinnedAt: 'desc' },
     });
-    pinnedPosts = pinned.map((p) => formatPost(p, userId));
   }
 
   // Step 1: Get ranked post IDs, excluding pinned posts
@@ -63,19 +81,21 @@ async function getTopFeed(filterGroupIds, userId, page) {
   `;
 
   const rankedIds = ranked.map((r) => r.id);
-  if (rankedIds.length === 0) return { pinnedPosts, posts: [] };
 
-  // Step 2: Fetch full post data via Prisma (consistent shape with regular feed)
-  const posts = await prisma.post.findMany({
-    where: { id: { in: rankedIds } },
-    include: POST_INCLUDE(userId),
-  });
+  // Step 2: Fetch full post data for ranked posts
+  const rankedRaw = rankedIds.length > 0
+    ? await prisma.post.findMany({ where: { id: { in: rankedIds } }, include: POST_INCLUDE(userId) })
+    : [];
 
-  // Step 3: Reorder posts to match ranked order and flatten reactions + flags
-  const postMap = new Map(posts.map((p) => [p.id, p]));
-  const rankedPosts = rankedIds.map((id) => formatPost(postMap.get(id), userId));
+  // Single batch query covers both pinned and ranked posts
+  const allIds = [...pinnedRaw.map((p) => p.id), ...rankedIds];
+  const counts = await batchReactionCounts(allIds);
 
-  return { pinnedPosts, posts: rankedPosts };
+  const pinnedPosts = pinnedRaw.map((p) => formatPost(p, counts[p.id]));
+  const postMap = new Map(rankedRaw.map((p) => [p.id, p]));
+  const posts = rankedIds.map((id) => formatPost(postMap.get(id), counts[id]));
+
+  return { pinnedPosts, posts };
 }
 
 async function getFeed(req, res, next) {
@@ -117,9 +137,10 @@ async function getFeed(req, res, next) {
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
     });
 
+    const counts = await batchReactionCounts(posts.map((p) => p.id));
     const nextCursor = posts.length === FEED_LIMIT ? posts[posts.length - 1].id : null;
 
-    res.json({ posts: posts.map((p) => formatPost(p, req.user.userId)), nextCursor });
+    res.json({ posts: posts.map((p) => formatPost(p, counts[p.id])), nextCursor });
   } catch (err) {
     // A well-formed but stale cursor (anchor row deleted between page loads)
     // makes Prisma throw P2025; degrade to an empty page instead of 500. (#11)
@@ -143,7 +164,8 @@ async function getPost(req, res, next) {
       return res.status(403).json({ error: 'You do not have access to this group' });
     }
 
-    res.json(formatPost(post, req.user.userId));
+    const counts = await batchReactionCounts([post.id]);
+    res.json(formatPost(post, counts[post.id]));
   } catch (err) {
     next(err);
   }
@@ -206,7 +228,8 @@ async function createPost(req, res, next) {
       include: POST_INCLUDE(req.user.userId),
     });
 
-    res.status(201).json(formatPost(post, req.user.userId));
+    // New post has no reactions yet — skip the batch query
+    res.status(201).json(formatPost(post, {}));
 
     const mentionedUserIds = parseMentions(title, content);
     if (mentionedUserIds.length > 0) {
@@ -252,13 +275,16 @@ async function updatePost(req, res, next) {
       }
     }
 
-    const updated = await prisma.post.update({
-      where: { id: req.params.postId },
-      data,
-      include: POST_INCLUDE(req.user.userId),
-    });
+    const [updated, counts] = await Promise.all([
+      prisma.post.update({
+        where: { id: req.params.postId },
+        data,
+        include: POST_INCLUDE(req.user.userId),
+      }),
+      batchReactionCounts([req.params.postId]),
+    ]);
 
-    res.json(formatPost(updated, req.user.userId));
+    res.json(formatPost(updated, counts[req.params.postId]));
 
     // Fire mention processing as a non-critical side effect
     const mentionedUserIds = parseMentions(req.body.title, req.body.content);
@@ -383,11 +409,15 @@ async function searchPosts(req, res, next) {
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
     })
 
+    const counts = await batchReactionCounts(posts.map((p) => p.id))
     const nextCursor = posts.length === FEED_LIMIT ? posts[posts.length - 1].id : null
-    res.json({ posts: posts.map((p) => formatPost(p, req.user.userId)), nextCursor })
+    res.json({ posts: posts.map((p) => formatPost(p, counts[p.id])), nextCursor })
   } catch (err) {
     next(err)
   }
 }
 
-module.exports = { getFeed, getPost, createPost, updatePost, deletePost, flagPost, searchPosts };
+module.exports = {
+  getFeed, getPost, createPost, updatePost, deletePost, flagPost, searchPosts,
+  POST_INCLUDE, formatPost, batchReactionCounts,
+};

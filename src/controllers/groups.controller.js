@@ -13,7 +13,7 @@ async function listMyGroups(req, res, next) {
         where: { userId: req.user.userId },
         select: { groupId: true },
       }),
-      prisma.group.findMany({ select: GROUP_SELECT, orderBy: { createdAt: 'asc' } }),
+      prisma.group.findMany({ select: GROUP_SELECT, orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] }),
     ]);
 
     const memberGroupIds = new Set(memberships.map((m) => m.groupId));
