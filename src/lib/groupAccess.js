@@ -1,8 +1,23 @@
+const { AsyncLocalStorage } = require('node:async_hooks');
 const prisma = require('../prisma/client');
+
+// Per-request cache: initialized by initGroupAccessCache middleware.
+// Stores getAccessibleGroup results for the duration of one HTTP request so
+// repeated calls with the same (userId, groupId) hit the DB only once.
+const requestStore = new AsyncLocalStorage();
+
+function initGroupAccessCache(req, res, next) {
+  requestStore.run(new Map(), next);
+}
 
 // Returns access-relevant group fields if the user can access the group
 // (member or public), otherwise null. Also null if the group doesn't exist.
 async function getAccessibleGroup(userId, groupId) {
+  const cache = requestStore.getStore();
+  const key = `${userId}:${groupId}`;
+
+  if (cache?.has(key)) return cache.get(key);
+
   const group = await prisma.group.findUnique({
     where: { id: groupId },
     select: {
@@ -14,10 +29,15 @@ async function getAccessibleGroup(userId, groupId) {
       children: { select: { id: true }, take: 1 },
     },
   });
-  if (!group) return null;
-  if (!group.isPublic && group.members.length === 0) return null;
-  const { members, children, ...rest } = group;
-  return { ...rest, hasChildren: children.length > 0 };
+
+  let result = null;
+  if (group && (group.isPublic || group.members.length > 0)) {
+    const { members, children, ...rest } = group;
+    result = { ...rest, hasChildren: children.length > 0 };
+  }
+
+  cache?.set(key, result);
+  return result;
 }
 
 async function canAccessGroup(userId, groupId) {
@@ -33,4 +53,4 @@ async function getAccessibleGroupIds(userId) {
   return [...new Set([...memberships.map((m) => m.groupId), ...publicGroups.map((g) => g.id)])];
 }
 
-module.exports = { getAccessibleGroup, canAccessGroup, getAccessibleGroupIds };
+module.exports = { getAccessibleGroup, canAccessGroup, getAccessibleGroupIds, initGroupAccessCache };

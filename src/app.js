@@ -15,6 +15,7 @@ const bookmarkRoutes = require('./routes/bookmarks.routes');
 const messageRoutes = require('./routes/messages.routes');
 const adminRoutes = require('./routes/admin.routes');
 const authMiddleware = require('./middleware/auth.middleware');
+const { initGroupAccessCache } = require('./lib/groupAccess');
 const prisma = require('./prisma/client');
 
 const app = express();
@@ -24,6 +25,7 @@ app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(cookieParser());
 app.use(express.json({ limit: '50kb' }));
+app.use(initGroupAccessCache);
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 

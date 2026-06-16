@@ -13,9 +13,9 @@ async function batchReactionCounts(postIds) {
   const rows = await prisma.$queryRaw`
     SELECT
       "postId",
-      COUNT(*) FILTER (WHERE type = 'with_you')::int  AS "withYouCount",
-      COUNT(*) FILTER (WHERE type = 'helped_me')::int AS "helpedMeCount",
-      COUNT(*) FILTER (WHERE type = 'hug')::int        AS "hugCount"
+      (COUNT(*) FILTER (WHERE type = 'with_you'))::int  AS "withYouCount",
+      (COUNT(*) FILTER (WHERE type = 'helped_me'))::int AS "helpedMeCount",
+      (COUNT(*) FILTER (WHERE type = 'hug'))::int        AS "hugCount"
     FROM "Reaction"
     WHERE "postId" IN (${Prisma.join(postIds)})
     GROUP BY "postId"
@@ -53,47 +53,75 @@ function formatPost({ reactions, flags, bookmarks, ...post }, counts) {
 async function getTopFeed(filterGroupIds, userId, page) {
   const offset = (page - 1) * FEED_LIMIT;
 
-  // Fetch pinned posts on page 1 only
-  let pinnedRaw = [];
+  // Pinned posts: Prisma query on page 1 only
+  let pinnedPosts = [];
   if (page === 1) {
-    pinnedRaw = await prisma.post.findMany({
+    const pinnedRaw = await prisma.post.findMany({
       where: { groupId: { in: filterGroupIds }, isPinned: true },
       include: POST_INCLUDE(userId),
       orderBy: { pinnedAt: 'desc' },
     });
+    if (pinnedRaw.length > 0) {
+      const pinnedCounts = await batchReactionCounts(pinnedRaw.map((p) => p.id));
+      pinnedPosts = pinnedRaw.map((p) => formatPost(p, pinnedCounts[p.id]));
+    }
   }
 
-  // Step 1: Get ranked post IDs, excluding pinned posts
-  const ranked = await prisma.$queryRaw`
-    SELECT p.id
+  // Ranked posts: single query that ranks, joins all related data, and aggregates
+  // all counts in one round trip — replaces the previous rank → fetch → count chain.
+  const rows = await prisma.$queryRaw`
+    SELECT
+      p.id,
+      p."userId",
+      p."groupId",
+      p.type,
+      p.title,
+      p.content,
+      p."linkUrl",
+      p."linkPreviewImage",
+      p."linkPreviewTitle",
+      p."linkPreviewDescription",
+      p."mediaUrl",
+      array_to_json(p."mediaUrls") AS "mediaUrls",
+      p."isFlagged",
+      p."isPinned",
+      p."pinnedAt",
+      p."isDownranked",
+      p."createdAt",
+      p."updatedAt",
+      CASE WHEN u.id IS NOT NULL
+        THEN json_build_object('id', u.id, 'firstName', u."firstName", 'lastName', u."lastName", 'avatarUrl', u."avatarUrl")
+        ELSE NULL
+      END AS "user",
+      json_build_object('id', g.id, 'name', g.name, 'slug', g.slug) AS "group",
+      (SELECT r2.type FROM "Reaction" r2 WHERE r2."postId" = p.id AND r2."userId" = ${userId} LIMIT 1) AS "myReaction",
+      (COUNT(DISTINCT c.id))::int                                          AS "commentCount",
+      (COUNT(r.id))::int                                                   AS "reactionCount",
+      (COUNT(r.id) FILTER (WHERE r.type = 'with_you'))::int               AS "withYouCount",
+      (COUNT(r.id) FILTER (WHERE r.type = 'helped_me'))::int              AS "helpedMeCount",
+      (COUNT(r.id) FILTER (WHERE r.type = 'hug'))::int                    AS "hugCount",
+      EXISTS(SELECT 1 FROM "Flag"     f WHERE f."postId" = p.id AND f."flaggedById" = ${userId}) AS "flaggedByMe",
+      EXISTS(SELECT 1 FROM "Bookmark" b WHERE b."postId" = p.id AND b."userId"      = ${userId}) AS "isBookmarked"
     FROM "Post" p
+    LEFT JOIN "User"     u ON u.id = p."userId"
+    LEFT JOIN "Group"    g ON g.id = p."groupId"
     LEFT JOIN "Reaction" r ON r."postId" = p.id
-    LEFT JOIN "Comment" c ON c."postId" = p.id
+    LEFT JOIN "Comment"  c ON c."postId" = p.id
     WHERE p."groupId" IN (${Prisma.join(filterGroupIds)})
       AND p."isPinned" = false
-    GROUP BY p.id
+    GROUP BY p.id, u.id, g.id
     ORDER BY
       p."isDownranked" ASC,
-      (COUNT(DISTINCT r.id) + 2.0 * COUNT(DISTINCT c.id) + 5.0 / (EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 1))::float / POWER(
+      (COUNT(r.id) + 2.0 * COUNT(DISTINCT c.id) + 5.0 / (EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 1)) / POWER(
         EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 2, 1.8
       ) DESC
     LIMIT ${FEED_LIMIT} OFFSET ${offset}
   `;
 
-  const rankedIds = ranked.map((r) => r.id);
-
-  // Step 2: Fetch full post data for ranked posts
-  const rankedRaw = rankedIds.length > 0
-    ? await prisma.post.findMany({ where: { id: { in: rankedIds } }, include: POST_INCLUDE(userId) })
-    : [];
-
-  // Single batch query covers both pinned and ranked posts
-  const allIds = [...pinnedRaw.map((p) => p.id), ...rankedIds];
-  const counts = await batchReactionCounts(allIds);
-
-  const pinnedPosts = pinnedRaw.map((p) => formatPost(p, counts[p.id]));
-  const postMap = new Map(rankedRaw.map((p) => [p.id, p]));
-  const posts = rankedIds.map((id) => formatPost(postMap.get(id), counts[id]));
+  const posts = rows.map(({ commentCount, reactionCount, ...row }) => ({
+    ...row,
+    _count: { comments: commentCount, reactions: reactionCount },
+  }));
 
   return { pinnedPosts, posts };
 }
