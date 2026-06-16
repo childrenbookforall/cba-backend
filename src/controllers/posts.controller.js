@@ -95,11 +95,11 @@ async function getTopFeed(filterGroupIds, userId, page) {
       END AS "user",
       json_build_object('id', g.id, 'name', g.name, 'slug', g.slug) AS "group",
       (SELECT r2.type FROM "Reaction" r2 WHERE r2."postId" = p.id AND r2."userId" = ${userId} LIMIT 1) AS "myReaction",
-      (COUNT(DISTINCT c.id))::int                                          AS "commentCount",
-      (COUNT(r.id))::int                                                   AS "reactionCount",
-      (COUNT(r.id) FILTER (WHERE r.type = 'with_you'))::int               AS "withYouCount",
-      (COUNT(r.id) FILTER (WHERE r.type = 'helped_me'))::int              AS "helpedMeCount",
-      (COUNT(r.id) FILTER (WHERE r.type = 'hug'))::int                    AS "hugCount",
+      (COUNT(DISTINCT c.id))::int                                                 AS "commentCount",
+      (COUNT(DISTINCT r.id))::int                                                 AS "reactionCount",
+      (COUNT(DISTINCT r.id) FILTER (WHERE r.type = 'with_you'))::int             AS "withYouCount",
+      (COUNT(DISTINCT r.id) FILTER (WHERE r.type = 'helped_me'))::int            AS "helpedMeCount",
+      (COUNT(DISTINCT r.id) FILTER (WHERE r.type = 'hug'))::int                  AS "hugCount",
       EXISTS(SELECT 1 FROM "Flag"     f WHERE f."postId" = p.id AND f."flaggedById" = ${userId}) AS "flaggedByMe",
       EXISTS(SELECT 1 FROM "Bookmark" b WHERE b."postId" = p.id AND b."userId"      = ${userId}) AS "isBookmarked"
     FROM "Post" p
@@ -112,7 +112,7 @@ async function getTopFeed(filterGroupIds, userId, page) {
     GROUP BY p.id, u.id, g.id
     ORDER BY
       p."isDownranked" ASC,
-      (COUNT(r.id) + 2.0 * COUNT(DISTINCT c.id) + 5.0 / (EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 1)) / POWER(
+      (COUNT(DISTINCT r.id) + 2.0 * COUNT(DISTINCT c.id) + 5.0 / (EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 1)) / POWER(
         EXTRACT(EPOCH FROM (NOW() - p."createdAt")) / 3600 + 2, 1.8
       ) DESC
     LIMIT ${FEED_LIMIT} OFFSET ${offset}

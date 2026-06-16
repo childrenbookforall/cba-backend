@@ -6,6 +6,23 @@ const prisma = require('../prisma/client');
 // repeated calls with the same (userId, groupId) hit the DB only once.
 const requestStore = new AsyncLocalStorage();
 
+// Process-level cache for public group IDs. Public groups change only via
+// admin mutations (createGroup, updateGroup, deleteGroup) which call
+// invalidatePublicGroupsCache(). Null means unpopulated; populated lazily.
+let publicGroupIdsCache = null;
+
+function invalidatePublicGroupsCache() {
+  publicGroupIdsCache = null;
+}
+
+async function getPublicGroupIds() {
+  if (publicGroupIdsCache === null) {
+    const rows = await prisma.group.findMany({ where: { isPublic: true }, select: { id: true } });
+    publicGroupIdsCache = rows.map((g) => g.id);
+  }
+  return publicGroupIdsCache;
+}
+
 function initGroupAccessCache(req, res, next) {
   requestStore.run(new Map(), next);
 }
@@ -44,13 +61,14 @@ async function canAccessGroup(userId, groupId) {
   return (await getAccessibleGroup(userId, groupId)) !== null;
 }
 
-// Group IDs whose posts the user can see: memberships plus all public groups
+// Group IDs whose posts the user can see: memberships plus all public groups.
+// Public group IDs come from an in-memory cache; memberships are always live.
 async function getAccessibleGroupIds(userId) {
-  const [memberships, publicGroups] = await Promise.all([
+  const [memberships, publicIds] = await Promise.all([
     prisma.groupMember.findMany({ where: { userId }, select: { groupId: true } }),
-    prisma.group.findMany({ where: { isPublic: true }, select: { id: true } }),
+    getPublicGroupIds(),
   ]);
-  return [...new Set([...memberships.map((m) => m.groupId), ...publicGroups.map((g) => g.id)])];
+  return [...new Set([...memberships.map((m) => m.groupId), ...publicIds])];
 }
 
-module.exports = { getAccessibleGroup, canAccessGroup, getAccessibleGroupIds, initGroupAccessCache };
+module.exports = { getAccessibleGroup, canAccessGroup, getAccessibleGroupIds, initGroupAccessCache, invalidatePublicGroupsCache };

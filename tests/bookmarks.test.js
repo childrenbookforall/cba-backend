@@ -4,6 +4,7 @@ const {
   deleteUser, deleteGroup, deletePost,
   signToken, authHeader,
 } = require('./helpers');
+const { invalidatePublicGroupsCache } = require('../src/lib/groupAccess');
 
 describe('Bookmarks API', () => {
   let user, author, token;
@@ -52,12 +53,14 @@ describe('Bookmarks API', () => {
     test('still returns the bookmark if the group is public, even without membership', async () => {
       await prisma.groupMember.deleteMany({ where: { userId: user.id, groupId: group.id } });
       await prisma.group.update({ where: { id: group.id }, data: { isPublic: true } });
+      invalidatePublicGroupsCache();
 
       const res = await request(app).get('/api/bookmarks').set(authHeader(token));
       expect(res.status).toBe(200);
       expect(res.body.posts.map((p) => p.id)).toContain(post.id);
 
       await prisma.group.update({ where: { id: group.id }, data: { isPublic: false } });
+      invalidatePublicGroupsCache();
       await addMember(user.id, group.id);
     });
   });

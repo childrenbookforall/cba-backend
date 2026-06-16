@@ -5,6 +5,7 @@ const { deleteMedia } = require('../services/upload.service');
 const { frontendUrl } = require('../config/env');
 const { canonicalPair } = require('../lib/messages');
 const { sendPush } = require('../services/push.service');
+const { invalidatePublicGroupsCache } = require('../lib/groupAccess');
 
 // ── Users ────────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,8 @@ async function deleteGroup(req, res, next) {
       throw err;
     }
 
+    invalidatePublicGroupsCache();
+
     // Best-effort Cloudinary cleanup after DB delete succeeds
     const urlsToDelete = photoPosts.flatMap((p) =>
       (p.mediaUrls?.length ?? 0) > 0 ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : [])
@@ -340,6 +343,7 @@ async function createGroup(req, res, next) {
       },
     });
 
+    invalidatePublicGroupsCache();
     res.status(201).json(group);
   } catch (err) {
     next(err);
@@ -377,6 +381,7 @@ async function updateGroup(req, res, next) {
     }
 
     const updated = await prisma.group.update({ where: { id: groupId }, data });
+    if ('isPublic' in data) invalidatePublicGroupsCache();
     res.json(updated);
   } catch (err) {
     next(err);
