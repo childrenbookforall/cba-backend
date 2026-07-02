@@ -9,6 +9,8 @@ const required = [
   'VAPID_MAILTO',
   'VAPID_PUBLIC_KEY',
   'VAPID_PRIVATE_KEY',
+  'TURSO_DATABASE_URL',
+  'TURSO_AUTH_TOKEN',
 ];
 
 required.forEach((key) => {

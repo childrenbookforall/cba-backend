@@ -443,6 +443,20 @@ describe('Admin API', () => {
         .set(authHeader(memberToken));
       expect(res.status).toBe(403);
     });
+
+    test('clears the removed member\'s mute state for that group', async () => {
+      await prisma.mutedGroup.create({ data: { userId: target.id, groupId: group.id } });
+
+      const res = await request(app)
+        .delete(`/api/admin/groups/${group.id}/members/${target.id}`)
+        .set(authHeader(adminToken));
+      expect(res.status).toBe(200);
+
+      const muted = await prisma.mutedGroup.findUnique({
+        where: { userId_groupId: { userId: target.id, groupId: group.id } },
+      });
+      expect(muted).toBeNull();
+    });
   });
 
   // ─── CONTENT MODERATION ──────────────────────────────────────────────────────

@@ -141,14 +141,31 @@ async function getFeed(req, res, next) {
         return res.status(403).json({ error: 'You do not have access to this group' });
       }
       filterGroupIds = [req.query.groupId];
+    } else {
+      // "All Groups" view — exclude groups the user has muted
+      const mutedRows = await prisma.mutedGroup.findMany({
+        where: { userId: req.user.userId, groupId: { in: groupIds } },
+        select: { groupId: true },
+      });
+      const mutedIds = new Set(mutedRows.map((m) => m.groupId));
+      filterGroupIds = groupIds.filter((id) => !mutedIds.has(id));
+    }
+
+    // Cap page to bound the OFFSET into the ranking scan/sort. 500 * 20 = 10k
+    // posts deep, far past any real scrolling session; prevents large-offset
+    // resource exhaustion on this unindexable, scored-live query. (#6)
+    const page = Math.min(MAX_TOP_FEED_PAGE, Math.max(1, parseInt(req.query.page) || 1));
+
+    if (filterGroupIds.length === 0) {
+      return res.json(
+        req.query.sort === 'top'
+          ? { pinnedPosts: [], posts: [], page, hasMore: false }
+          : { posts: [], nextCursor: null }
+      );
     }
 
     // Top feed — ranked by time-decayed reaction score, page-based pagination
     if (req.query.sort === 'top') {
-      // Cap page to bound the OFFSET into the ranking scan/sort. 500 * 20 = 10k
-      // posts deep, far past any real scrolling session; prevents large-offset
-      // resource exhaustion on this unindexable, scored-live query. (#6)
-      const page = Math.min(MAX_TOP_FEED_PAGE, Math.max(1, parseInt(req.query.page) || 1));
       const { pinnedPosts, posts } = await getTopFeed(filterGroupIds, req.user.userId, page);
       const hasMore = posts.length === FEED_LIMIT;
       return res.json({ pinnedPosts, posts, page, hasMore });

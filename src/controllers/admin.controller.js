@@ -428,6 +428,7 @@ async function removeGroupMember(req, res, next) {
     await prisma.groupMember.delete({
       where: { userId_groupId: { userId, groupId } },
     });
+    await prisma.mutedGroup.deleteMany({ where: { userId, groupId } });
 
     res.json({ message: 'Member removed' });
   } catch (err) {

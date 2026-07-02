@@ -8,15 +8,20 @@ const GROUP_SELECT = { id: true, name: true, slug: true, description: true, pare
 // a parent group is included only when at least one of its children is.
 async function listMyGroups(req, res, next) {
   try {
-    const [memberships, allGroups] = await Promise.all([
+    const [memberships, allGroups, mutedRows] = await Promise.all([
       prisma.groupMember.findMany({
         where: { userId: req.user.userId },
         select: { groupId: true },
       }),
       prisma.group.findMany({ select: GROUP_SELECT, orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] }),
+      prisma.mutedGroup.findMany({
+        where: { userId: req.user.userId },
+        select: { groupId: true },
+      }),
     ]);
 
     const memberGroupIds = new Set(memberships.map((m) => m.groupId));
+    const mutedGroupIds = new Set(mutedRows.map((m) => m.groupId));
     const parentIds = new Set(allGroups.filter((g) => g.parentId).map((g) => g.parentId));
 
     const visibleLeaves = allGroups.filter(
@@ -37,7 +42,7 @@ async function listMyGroups(req, res, next) {
       return acc;
     }, {});
 
-    const withCount = (g) => ({ ...g, _count: { members: countByGroup[g.id] ?? 0 } });
+    const withCount = (g) => ({ ...g, _count: { members: countByGroup[g.id] ?? 0 }, isMuted: mutedGroupIds.has(g.id) });
 
     const result = [];
     for (const g of allGroups) {
@@ -122,4 +127,43 @@ async function listGroupMembers(req, res, next) {
   }
 }
 
-module.exports = { listMyGroups, getGroup, listGroupMembers };
+async function muteGroup(req, res, next) {
+  try {
+    const { groupId } = req.params;
+    if (!(await canAccessGroup(req.user.userId, groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
+    }
+
+    await prisma.mutedGroup.upsert({
+      where: { userId_groupId: { userId: req.user.userId, groupId } },
+      update: {},
+      create: { userId: req.user.userId, groupId },
+    });
+
+    res.json({ isMuted: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function unmuteGroup(req, res, next) {
+  try {
+    const { groupId } = req.params;
+    if (!(await canAccessGroup(req.user.userId, groupId))) {
+      return res.status(403).json({ error: 'You do not have access to this group' });
+    }
+
+    await prisma.mutedGroup.delete({
+      where: { userId_groupId: { userId: req.user.userId, groupId } },
+    });
+
+    res.json({ isMuted: false });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      return res.json({ isMuted: false });
+    }
+    next(err);
+  }
+}
+
+module.exports = { listMyGroups, getGroup, listGroupMembers, muteGroup, unmuteGroup };
