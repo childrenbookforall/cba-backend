@@ -109,6 +109,7 @@ async function getUser(req, res, next) {
         lastName: true,
         bio: true,
         avatarUrl: true,
+        createdAt: true,
       },
     });
     if (!user) return res.status(404).json({ error: 'User not found' });
