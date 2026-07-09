@@ -29,7 +29,7 @@ const MAX_TOP_FEED_PAGE = 500;
 // reactions is filtered to the current user only (0 or 1 row per post).
 // Per-type counts come from batchReactionCounts, not from this include.
 const POST_INCLUDE = (userId) => ({
-  user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+  user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, badges: true } },
   group: { select: { id: true, name: true, slug: true } },
   reactions: { where: { userId }, select: { type: true } },
   flags: { where: { flaggedById: userId }, select: { id: true } },
@@ -90,7 +90,7 @@ async function getTopFeed(filterGroupIds, userId, page) {
       p."createdAt",
       p."updatedAt",
       CASE WHEN u.id IS NOT NULL
-        THEN json_build_object('id', u.id, 'firstName', u."firstName", 'lastName', u."lastName", 'avatarUrl', u."avatarUrl")
+        THEN json_build_object('id', u.id, 'firstName', u."firstName", 'lastName', u."lastName", 'avatarUrl', u."avatarUrl", 'badges', u.badges)
         ELSE NULL
       END AS "user",
       json_build_object('id', g.id, 'name', g.name, 'slug', g.slug) AS "group",

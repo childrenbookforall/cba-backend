@@ -11,9 +11,16 @@ const {
   togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
+  bulkAssignBadges,
   getSiteNotification, upsertSiteNotification, toggleSiteNotification,
   listAllConversations, getConversationThread,
 } = require('../controllers/admin.controller');
+
+const BADGE_VALUES = ['host', 'co_host', 'supporter', 'member', 'member_sabbatical'];
+const MUTUALLY_EXCLUSIVE_BADGE_PAIRS = [
+  ['host', 'co_host'],
+  ['member', 'member_sabbatical'],
+];
 
 router.use(authMiddleware, adminMiddleware);
 router.use(validateCursor);
@@ -29,6 +36,21 @@ router.post('/users/:userId/invite', sendInvite);
 router.get('/users', listUsers);
 router.patch('/users/:userId/suspend', suspendUser);
 router.delete('/users/:userId', deleteUser);
+
+router.post('/badges/bulk', [
+  body('assignments').isArray({ min: 1 }).withMessage('assignments must be a non-empty array'),
+  body('assignments.*.email').isEmail().withMessage('Each assignment needs a valid email'),
+  body('assignments.*.badges').isArray().withMessage('Each assignment needs a badges array'),
+  body('assignments.*.badges.*').isIn(BADGE_VALUES).withMessage(`badges must be one of: ${BADGE_VALUES.join(', ')}`),
+  body('assignments.*.badges').custom((badges) => {
+    for (const [a, b] of MUTUALLY_EXCLUSIVE_BADGE_PAIRS) {
+      if (Array.isArray(badges) && badges.includes(a) && badges.includes(b)) {
+        throw new Error(`badges cannot include both "${a}" and "${b}"`);
+      }
+    }
+    return true;
+  }),
+], validateMiddleware, bulkAssignBadges);
 
 // Groups
 router.get('/groups', listGroups);

@@ -107,7 +107,7 @@ async function listGroupMembers(req, res, next) {
     const rows = await prisma.groupMember.findMany({
       where,
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true, isActive: true } },
+        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true, isActive: true, badges: true } },
       },
       orderBy: { joinedAt: 'asc' },
       take: take + 1,

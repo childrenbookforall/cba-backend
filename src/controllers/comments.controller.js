@@ -23,11 +23,11 @@ async function getComments(req, res, next) {
     const comments = await prisma.comment.findMany({
       where: { postId: req.params.postId, parentId: null },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, badges: true } },
         flags: { where: { flaggedById: req.user.userId }, select: { id: true } },
         replies: {
           include: {
-            user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+            user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, badges: true } },
             flags: { where: { flaggedById: req.user.userId }, select: { id: true } },
           },
           orderBy: { createdAt: 'asc' },
@@ -87,7 +87,7 @@ async function createComment(req, res, next) {
     const comment = await prisma.comment.create({
       data: { postId: post.id, userId: req.user.userId, content, parentId: parentId || null },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, badges: true } },
       },
     });
 
@@ -191,7 +191,7 @@ async function updateComment(req, res, next) {
       where: { id: req.params.commentId },
       data: { content },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+        user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, badges: true } },
       },
     });
 

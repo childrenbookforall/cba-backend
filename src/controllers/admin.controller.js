@@ -175,6 +175,40 @@ async function deleteUser(req, res, next) {
   }
 }
 
+// ── Badges ───────────────────────────────────────────────────────────────────
+
+async function bulkAssignBadges(req, res, next) {
+  try {
+    const { assignments } = req.body;
+
+    // Email storage isn't normalized at signup, so match case-insensitively
+    // rather than assuming the CSV's casing matches whatever was stored.
+    const emails = assignments.map((a) => a.email.toLowerCase());
+    const users = await prisma.user.findMany({
+      where: { OR: emails.map((email) => ({ email: { equals: email, mode: 'insensitive' } })) },
+      select: { id: true, email: true },
+    });
+    const userIdByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.id]));
+
+    const notFound = emails.filter((email) => !userIdByEmail.has(email));
+
+    await prisma.$transaction(
+      assignments
+        .filter((a) => userIdByEmail.has(a.email.toLowerCase()))
+        .map((a) =>
+          prisma.user.update({
+            where: { id: userIdByEmail.get(a.email.toLowerCase()) },
+            data: { badges: a.badges },
+          })
+        )
+    );
+
+    res.json({ updated: userIdByEmail.size, notFound });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteGroup(req, res, next) {
   try {
     const group = await prisma.group.findUnique({ where: { id: req.params.groupId } });
@@ -790,6 +824,7 @@ module.exports = {
   togglePinPost, toggleDownrankPost,
   listFlags, reviewFlag,
   pushBroadcast,
+  bulkAssignBadges,
   getSiteNotification, upsertSiteNotification, toggleSiteNotification,
   listAllConversations, getConversationThread,
 };

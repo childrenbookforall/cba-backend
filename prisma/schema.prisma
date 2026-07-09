@@ -12,6 +12,14 @@ enum Role {
   member
 }
 
+enum Badge {
+  host
+  co_host
+  supporter
+  member
+  member_sabbatical
+}
+
 enum PostType {
   text
   link
@@ -46,6 +54,7 @@ model User {
   birthday     DateTime?
   avatarUrl    String?
   role                Role     @default(member)
+  badges              Badge[]  @default([])
   isActive            Boolean  @default(true)
   canInitiateMessages Boolean  @default(false)
   createdAt    DateTime @default(now())
