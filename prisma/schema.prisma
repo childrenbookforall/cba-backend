@@ -108,6 +108,7 @@ model Group {
   parentId    String?
   isPublic    Boolean  @default(false)
   isViewOnly  Boolean  @default(false)
+  mutedByDefault Boolean @default(false)
   order       Int      @default(0)
   createdAt   DateTime @default(now())
 

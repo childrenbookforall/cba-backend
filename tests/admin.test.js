@@ -406,6 +406,34 @@ describe('Admin API', () => {
     });
   });
 
+  describe('POST /api/admin/groups/:groupId/members mutedByDefault', () => {
+    let mutedGroup, target2;
+
+    beforeAll(async () => {
+      mutedGroup = await createGroup({ mutedByDefault: true });
+      target2 = await createUser();
+    });
+
+    afterAll(async () => {
+      await prisma.mutedGroup.deleteMany({ where: { userId: target2.id, groupId: mutedGroup.id } });
+      await deleteGroup(mutedGroup.id);
+      await deleteUser(target2.id);
+    });
+
+    test('auto-mutes a new member joining a mutedByDefault group', async () => {
+      const res = await request(app)
+        .post(`/api/admin/groups/${mutedGroup.id}/members`)
+        .set(authHeader(adminToken))
+        .send({ userId: target2.id });
+      expect(res.status).toBe(201);
+
+      const muted = await prisma.mutedGroup.findUnique({
+        where: { userId_groupId: { userId: target2.id, groupId: mutedGroup.id } },
+      });
+      expect(muted).not.toBeNull();
+    });
+  });
+
   describe('DELETE /api/admin/groups/:groupId/members/:userId', () => {
     let group, target;
 

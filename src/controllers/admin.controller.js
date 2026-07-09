@@ -446,6 +446,14 @@ async function addGroupMember(req, res, next) {
       data: { userId, groupId },
     });
 
+    if (group.mutedByDefault) {
+      await prisma.mutedGroup.upsert({
+        where: { userId_groupId: { userId, groupId } },
+        update: {},
+        create: { userId, groupId },
+      });
+    }
+
     res.status(201).json(membership);
   } catch (err) {
     if (err.code === 'P2002') {
